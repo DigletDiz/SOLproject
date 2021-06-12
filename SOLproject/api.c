@@ -65,6 +65,7 @@ fallimento, errno viene settato opportunamente.*/
     return 0;
 }
 
+//provo il funzionamento del commit
 
 int openFile(const char* pathname, int flags)
 /*Richiesta di apertura o di creazione di un file. La semantica della openFile dipende dai flags passati come secondo
