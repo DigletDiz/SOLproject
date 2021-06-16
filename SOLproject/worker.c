@@ -6,7 +6,6 @@
 
 #include <conn.h>
 
-#define N 100
 
 // converte tutti i carattere minuscoli in maiuscoli
 static void toup(char *str) {
@@ -20,7 +19,7 @@ static void toup(char *str) {
 // funzione eseguita dal Worker thread del pool
 // gestisce una intera connessione di un client
 //
-void threadF(void *arg) {
+void worker(void *arg) {
     assert(arg);
     long* args = (long*)arg;
     long connfd = args[0];
@@ -28,34 +27,60 @@ void threadF(void *arg) {
 	int wep = args[2];
     free(arg);
     
-	char* str = calloc(N, sizeof(char));
-	if(!str) {
+	int* opcode = calloc(1, sizeof(int));
+	if(!opcode) {
 	    perror("calloc");
 	    fprintf(stderr, "Memoria esaurita....\n");
 	    return;
 	}
 
 	int n;		
-	if((n = readn(connfd, str, N * sizeof(char))) == -1) {
+	if((n = readn(connfd, opcode, sizeof(int))) == -1) {
 	    perror("read");
 	    free(str);
 	    return;
 	}
 	if(n == 0) {
-		printf("Client chiuso\n");
+		printf("Client closed\n");
 		close(connfd);
 		return;
 	}
-	printf("Ho letto: %s\n", str);
+	
+	switch(opcode) {
+
+		case OPENFILE:		
+			break;
+		case READFILE:
+			break;
+		case READNFILES:
+			break;
+		case WRITEFILE:
+			break;
+		case APPENDFILE:
+			break;
+		case LOCKFILE:
+			break;
+		case UNLOCKFILE:
+			break;
+		case CLOSEFILE:
+			break;
+		case REMOVEFILE:
+			break;
+		default:
+			break;
+
+	}
+
+	/*printf("Ho letto: %s\n", str);
 	toup(str);
 	printf("Pronto a mandare: %s\n", str);
 	if((n = writen(connfd, str, N * sizeof(char))) == -1) {
 	    perror("write");
 	    free(str);
 	    return;
-	}
+	}*/
 
-	free(str);
+	free(opcode);
 
 	//rimanda il descrittore al main thread
 	if((n = writen(wep, &connfd, sizeof(long))) == -1) {
@@ -63,7 +88,7 @@ void threadF(void *arg) {
 	    return;
 	}
 
-	printf("Servito\n");
+	printf("Done\n");
 	    
 	return;
 }
