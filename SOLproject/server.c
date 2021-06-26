@@ -12,7 +12,7 @@
 #include <threadpool.h>
 #include <conn.h>
 #include <util.h>
-#include <threadF.h>
+#include <worker.h>
 
 
 /**
@@ -222,7 +222,7 @@ int main(int argc, char *argv[]) {
 					FD_CLR(i, &set);
 					updatemax(set, fdmax);
 	
-				    int r = addToThreadPool(pool, threadF, (void*)args);
+				    int r = addToThreadPool(pool, worker, (void*)args);
 				    if (r==0) continue; // aggiunto con successo
 				    if (r<0) { // errore interno
 						fprintf(stderr, "FATAL ERROR, adding to the thread pool\n");
