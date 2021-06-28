@@ -1,5 +1,13 @@
 #define UNIX_PATH_MAX 108
 
+typedef struct request{
+    int code;
+    char* pathname;
+    int flags;
+} request;
+
+static int fdsocket;
+
 int openConnection(const char* sockname, int msec, const struct timespec abstime) {
 /*Viene aperta una connessione AF_UNIX al socket file sockname. Se il server non accetta immediatamente la
 richiesta di connessione, la connessione da parte del client viene ripetuta dopo ‘msec’ millisecondi e fino allo
@@ -12,19 +20,18 @@ di fallimento, errno viene settato opportunamente.*/
     sa.sun_family = AF_UNIX;
 
     //socket creation
-    int fd_skt;
-    SYSCALL_RETURN("socket", fd_skt, socket(AF_UNIX, SOCK_STREAM, 0), "Socket creation error\n");
+    SYSCALL_RETURN("socket", fdsocket, socket(AF_UNIX, SOCK_STREAM, 0), "Socket creation error\n");
 
     //waiting time
     struct timespec waitTime; 
-    waitTime.tv_nsec = ms * 1000000;
+    waitTime.tv_nsec = msec * 1000000;
 
     //current time
     struct timespec currTime;
     clock_gettime(CLOCK_REALTIME, &currTime); //missing error checking
 
     int err = 0;
-    while((err = connect(fd_skt, (struct sockaddr*)&sa, sizeof(sa))) == -1
+    while((err = connect(fdsocket, (struct sockaddr*)&sa, sizeof(sa))) == -1
             && currTime.tv_sec < abstime.tv_sec) {
 
         if(nanosleep(&waitTime, NULL) == -1) {
@@ -66,7 +73,7 @@ fallimento, errno viene settato opportunamente.*/
 }
 
 
-int openFile(const char* pathname, int flags)
+int openFile(const char* pathname, int flags) {
 /*Richiesta di apertura o di creazione di un file. La semantica della openFile dipende dai flags passati come secondo
 argomento che possono essere O_CREATE ed O_LOCK. Se viene passato il flag O_CREATE ed il file esiste già
 memorizzato nel server, oppure il file non esiste ed il flag O_CREATE non è stato specificato, viene ritornato un
@@ -76,6 +83,54 @@ aperto e/o creato in modalità locked, che vuol dire che l’unico che può legg
 processo che lo ha aperto. Il flag O_LOCK può essere esplicitamente resettato utilizzando la chiamata unlockFile,
 descritta di seguito.
 Ritorna 0 in caso di successo, -1 in caso di fallimento, errno viene settato opportunamente.*/
+    if(pathname == NULL){
+            return -1;
+    }
+
+    int err = 0;
+
+    request* req = (request*) malloc(sizeof(request));
+    if (req == NULL) {
+        perror("malloc failed\n");
+        return -1;
+    }
+
+    req->code = 1; //OPENFILE = 1
+    req->pathname = pathname;
+    req->flags = flags;
+
+    //sending request
+    err = writen(fdsocket, req, sizeof(req));
+    if(err == -1) {
+        perror("writen");
+        fprintf(stderr, "Error in sending request....\n");
+	    return;
+    }
+
+    free(req);
+
+    int feedback;
+
+    //Reading server's feedback
+    err = readn(fdsocket, &feedback, sizeof(feedback));
+    if(err == -1) {
+        perror("readn");
+        fprintf(stderr, "Error in reading feedback....\n");
+	    return;
+    }
+
+    if(feedback == 0) {
+        printf("openFile %s: success", pathname);
+        return 0;
+    }
+    if(feedback == -1) {
+        printf("openFile %s: fail", pathname);
+        //seterrno
+        return -1;
+    }
+}
+
+
 int readFile(const char* pathname, void** buf, size_t* size)
 /*Legge tutto il contenuto del file dal server (se esiste) ritornando un puntatore ad un'area allocata sullo heap nel
 parametro ‘buf’, mentre ‘size’ conterrà la dimensione del buffer dati (ossia la dimensione in bytes del file letto). In
