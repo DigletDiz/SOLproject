@@ -6,52 +6,127 @@
 
 #include <conn.h>
 
-
-// converte tutti i carattere minuscoli in maiuscoli
-static void toup(char *str) {
-    char *p = str;
-    while(*p != '\0') { 
-        *p = (islower(*p)?toupper(*p):*p); 
-	++p;
-    }        
-}
+typedef struct wargs{
+	long clsock;
+	long shutdown;
+	long wpipe;
+	icl_hash_t** fileht;
+	icl_hash_t** openht;
+} wargs;
 
 // funzione eseguita dal Worker thread del pool
-// gestisce una intera connessione di un client
-//
 void worker(void *arg) {
     assert(arg);
-    long* args = (long*)arg;
-    long connfd = args[0];
-    //long* termina = (long*)(args[1]);
-	int wep = args[2];
+    wargs* args = (wargs*)arg;
+    long connfd = args->clsock;
+    //long* termina = (long*)(args->shutdown);
+	int wep = (int)args->wpipe;
+	icl_hash_t** fileht = args->fileht;
+	icl_hash_t** openht = args->openht;
     free(arg);
-    
-	int* opcode = calloc(1, sizeof(int));
-	if(!opcode) {
-	    perror("calloc");
-	    fprintf(stderr, "Memoria esaurita....\n");
-	    return;
-	}
 
-	int n;		
-	if((n = readn(connfd, opcode, sizeof(int))) == -1) {
+	//malloc for the client's request
+	request* req = (request*) malloc(sizeof(request));
+    if(req == NULL) {
+        perror("malloc failed\n");
+        return -1;
+    }
+
+	int err = 0;
+
+	//reading client's request		
+	if((err = readn(connfd, req, sizeof(int))) == -1) {
 	    perror("read");
-	    free(str);
 	    return;
 	}
-	if(n == 0) {
-		printf("Client closed\n");
+	//client closed connection
+	if(err == 0) {
+		printf("Client %d closed\n", (int)connfd);
 		close(connfd);
 		return;
 	}
+	//error
+	if(err == -1) {
+        perror("readn");
+        fprintf(stderr, "Error in reading request....\n");
+
+		//writing back file descriptor
+		if((n = writen(wep, &connfd, sizeof(long))) == -1) {
+		    perror("pipe write\n");
+		    return;
+		}
+	    return;
+    }
 	
+	int opcode = req->code;
+
 	switch(opcode) {
 
-		case OPENFILE:		
+		case 1://OPENFILE
+			int flags = req->flags;
+			char* pathname = req->pathname;
+			
+			if(flags == 0) { //0 = no flags
+				char* data = icl_hash_find(ht, (void*)pathname);//void * icl_hash_find(icl_hash_t *ht, void* key)
+				if(data == NULL) {
+					perror("File %s doesn't exist\n", pathname);
+				}
+				else {
+					//inserting in the openhashtable the opened file for the client
+					icl_hash_insert(openht, (void*)connfd, (void*)pathname);
+					printf("File %s opened for client %d\n", pathname, (int)connfd);
+				}
+			}
+			else if(flags == 1) { //1 = O_CREATE
+				char* data = (char*) malloc(sizeof(char)*256);
+				icl_hash_t* new = icl_hash_insert(fileht, (void*)pathname, (void*)data);
+				if(new == NULL) {
+					perror("File %s already exists\n", pathname);
+				}
+				else{
+					printf("File %s inserted in the storage\n", pathname);
+					//inserting in the openhashtable the opened file for the client
+					icl_hash_insert(openht, (void*)connfd, (void*)pathname);
+					printf("File %s opened for client %d\n", pathname, (int)connfd);
+				}
+			}
+			else if(flags == 2) {printf("O_LOCK not supported\n");} //O_LOCK
+			else if(flags == 3) {printf("O_LOCK not supported\n");} //O_CREATE & O_LOCK
+			else {printf("flags not recognized");}
+
 			break;
-		case READFILE:
+
+		case 2: //READFILE
+			//Does the file exist?
+			char* pathname = req->pathname;
+			char* data = icl_hash_find(fileht, (void*)pathname);
+			if(data == NULL) {
+				perror("File %s doesn't exist\n", pathname);
+				break;
+			}
+
+			//Did the client open the file?
+			lnode* opfilel = icl_hash_find(openht, (void*)connfd);
+			if(opfilel == NULL) {
+				printf("Client not found\n");
+				break;
+			}
+			int found = listFind(opfilel, pathname);
+			if(found == -1) {
+				perror("Client %d must open file %s before trying to read it\n", (int)connfd, pathname);
+				break;
+			}
+
+			//writing file to the client 
+			err = writen(connfd, data, sizeof(data));
+    		if(err == -1) {
+    			perror("writen");
+    			fprintf(stderr, "Error in sending file's data....\n");
+				return;
+			}
+
 			break;
+
 		case READNFILES:
 			break;
 		case WRITEFILE:
@@ -71,24 +146,14 @@ void worker(void *arg) {
 
 	}
 
-	/*printf("Ho letto: %s\n", str);
-	toup(str);
-	printf("Pronto a mandare: %s\n", str);
-	if((n = writen(connfd, str, N * sizeof(char))) == -1) {
-	    perror("write");
-	    free(str);
-	    return;
-	}*/
-
 	free(opcode);
+	free(buf);
 
 	//rimanda il descrittore al main thread
 	if((n = writen(wep, &connfd, sizeof(long))) == -1) {
 	    perror("pipe write\n");
 	    return;
 	}
-
-	printf("Done\n");
 	    
 	return;
 }
