@@ -13,6 +13,33 @@
 #include <conn.h>
 #include <util.h>
 #include <worker.h>
+#include <icl_hash.h>
+
+
+typedef struct wargs{
+	long clsock;
+	long shutdown;
+	long wpipe;
+	icl_hash_t** fileht;
+	icl_hash_t** openht;
+} wargs;
+
+
+int int_compare(void* a, void* b) {
+	if((int*)a == (int*)b) {
+		return 1;
+	}
+	else {
+		return 0;
+	}
+}
+
+//nbuckets = max file number on config
+int file_nbuckets = 1000;
+int open_nbuckets = 20;
+
+icl_hash_t* fileht = icl_hash_create(file_nbuckets, NULL, NULL);
+icl_hash_t* openht = icl_hash_create(open_nbuckets, NULL, int_compare);
 
 
 /**
@@ -210,14 +237,16 @@ int main(int argc, char *argv[]) {
 					}
 				}
 				else { //richiesta di un client, la mando al tp
-					long* args = malloc(3*sizeof(long));
-				    if (!args) {
+					wargs* args = (wargs*) malloc(sizeof(wargs));
+				    if(!args) {
 				      perror("FATAL ERROR 'malloc'");
 				      goto _exit;
 				    }
-				    args[0] = i;
-				    args[1] = (long)&termina;
-					args[2] = (long)request_pipe[1];
+				    args->clsock = i; //client socket
+				    args->shutdown = (long)&termina; //do I need to stop?
+					args->wpipe = (long)request_pipe[1]; //pipe write descriptor
+					args->fileht = &fileht;
+					args->openht = &openht;
 
 					FD_CLR(i, &set);
 					updatemax(set, fdmax);
