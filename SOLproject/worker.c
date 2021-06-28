@@ -67,26 +67,26 @@ void worker(void *arg) {
 			char* pathname = req->pathname;
 			
 			if(flags == 0) { //0 = no flags
-				char* data = icl_hash_find(ht, (void*)pathname);//void * icl_hash_find(icl_hash_t *ht, void* key)
+				char* data = icl_hash_find(*fileht, (void*)pathname);
 				if(data == NULL) {
 					perror("File %s doesn't exist\n", pathname);
 				}
 				else {
 					//inserting in the openhashtable the opened file for the client
-					icl_hash_insert(openht, (void*)connfd, (void*)pathname);
+					icl_hash_insert(*openht, (void*)connfd, (void*)pathname);
 					printf("File %s opened for client %d\n", pathname, (int)connfd);
 				}
 			}
 			else if(flags == 1) { //1 = O_CREATE
 				char* data = (char*) malloc(sizeof(char)*256);
-				icl_hash_t* new = icl_hash_insert(fileht, (void*)pathname, (void*)data);
+				icl_hash_t* new = icl_hash_insert(*fileht, (void*)pathname, (void*)data);
 				if(new == NULL) {
 					perror("File %s already exists\n", pathname);
 				}
 				else{
 					printf("File %s inserted in the storage\n", pathname);
 					//inserting in the openhashtable the opened file for the client
-					icl_hash_insert(openht, (void*)connfd, (void*)pathname);
+					icl_hash_insert(*openht, (void*)connfd, (void*)pathname);
 					printf("File %s opened for client %d\n", pathname, (int)connfd);
 				}
 			}
@@ -99,14 +99,14 @@ void worker(void *arg) {
 		case 2: //READFILE
 			//Does the file exist?
 			char* pathname = req->pathname;
-			char* data = icl_hash_find(fileht, (void*)pathname);
+			char* data = icl_hash_find(*fileht, (void*)pathname);
 			if(data == NULL) {
 				perror("File %s doesn't exist\n", pathname);
 				break;
 			}
 
 			//Did the client open the file?
-			lnode* opfilel = icl_hash_find(openht, (void*)connfd);
+			lnode* opfilel = icl_hash_find(*openht, (void*)connfd);
 			if(opfilel == NULL) {
 				printf("Client not found\n");
 				break;
