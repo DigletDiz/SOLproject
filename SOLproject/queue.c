@@ -25,13 +25,13 @@ queue* qcreate() {
 
 queue* enqueue(queue* q, const char op, void* dat) {
     if(q == NULL) {
-        perror("q is NULL");
-        return EXIT_FAILURE;
+        perror("enqueue failed: q is NULL\n");
+        return q;
     }
     node* new = (node*) malloc(sizeof(node));
     if (new == NULL) {
-        perror("malloc failed");
-        return EXIT_FAILURE;
+        perror("enqueue failed: malloc failed\n");
+        return q;
     }
 
     new->opt = op;
@@ -53,11 +53,11 @@ queue* enqueue(queue* q, const char op, void* dat) {
 node* pop(queue* q) {
     if(q == NULL) {
         perror("q is NULL");
-        return EXIT_FAILURE;
+        return NULL;
     }
     if(q->head == NULL) {
         perror("q is empty");
-        return EXIT_FAILURE;
+        return NULL;
     }
 
     node* popped = q->head;
@@ -69,29 +69,3 @@ node* pop(queue* q) {
 
     return popped;
 }
-
-/*node* listInsertHead(node* l, const char op, void* dat) {
-    node* new = (node*) malloc(sizeof(node));
-    if (new == NULL) {
-        perror("malloc failed");
-        return EXIT_FAILURE;
-    }
-
-    new->opt = op;
-    new->data = dat;
-    new->next = l;
-
-    l = new;
-
-    return l;
-}*/
-/*void listDelete(node** l) {
-
-    node* tmp;
-    
-    while(*l != NULL) {
-        tmp = *l;
-        *l = (*l)->next;
-        free(tmp);
-    }
-}*/
