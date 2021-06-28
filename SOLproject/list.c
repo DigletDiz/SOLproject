@@ -45,10 +45,10 @@ lnode* listInsertTail(lnode* l, char* pathname) {
 }
 
 
-lnode* listFind(lnode* l, char* pathname) {
+int listFind(lnode* l, char* pathname) {
     while(l != NULL) {
         if(l->pathname == pathname) {
-            return l; //file found
+            return 0; //file found
         }
         else {
             l = l->next;
@@ -56,7 +56,7 @@ lnode* listFind(lnode* l, char* pathname) {
     }
 
     //file not found
-    return NULL;
+    return -1;
 }
 
 
