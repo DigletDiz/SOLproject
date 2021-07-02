@@ -1,20 +1,12 @@
-typedef struct node {
-    char opt;
-    void* data;
-    struct node* next;
-} node;
-
-typedef struct queue {
-    node* head;
-    node* tail;
-} queue;
-
+#include <stdio.h>
+#include <stdlib.h>
+#include "queue.h"
 
 queue* qcreate() {
     queue* new = (queue*) malloc(sizeof(queue));
-    if (new == NULL) {
+    if(new == NULL) {
         perror("malloc failed");
-        return EXIT_FAILURE;
+        return NULL;
     }
 
     new->head = NULL;
@@ -23,15 +15,15 @@ queue* qcreate() {
     return new;
 }
 
-queue* enqueue(queue* q, const char op, void* dat) {
+void enqueue(queue* q, const char op, void* dat) {
     if(q == NULL) {
         perror("enqueue failed: q is NULL\n");
-        return q;
+        return;
     }
     node* new = (node*) malloc(sizeof(node));
     if (new == NULL) {
         perror("enqueue failed: malloc failed\n");
-        return q;
+        return;
     }
 
     new->opt = op;
@@ -47,7 +39,7 @@ queue* enqueue(queue* q, const char op, void* dat) {
         q->tail = new;
     }
 
-    return q;
+    return;
 }
 
 node* pop(queue* q) {

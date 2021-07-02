@@ -1,47 +1,44 @@
-typedef struct lnode {
-    char* pathname;
-    struct lnode* next;
-} lnode;
+#include <list.h>
 
 
-lnode* listInsertHead(lnode* l, char* pathname) {
+void listInsertHead(lnode** l, char* pathname) {
     lnode* new = (lnode*) malloc(sizeof(lnode));
     if (new == NULL) {
         perror("malloc failed");
-        return EXIT_FAILURE;
+        return;
     }
 
     new->pathname = pathname;
-    new->next = l;
+    new->next = *l;
 
-    l = new;
+    *l = new;
 
-    return l;
+    return;
 }
 
 
-lnode* listInsertTail(lnode* l, char* pathname) {
+void listInsertTail(lnode** l, char* pathname) {
     lnode* new = (lnode*) malloc(sizeof(lnode));
     if (new == NULL) {
         perror("malloc failed");
-        return EXIT_FAILURE;
+        return;
     }
 
     new->pathname = pathname;
     new->next = NULL;
 
-    if(l == NULL) {
-        l = new;
+    if(*l == NULL) {
+        *l = new;
     }
     else {
-        lnode* curr = l;
+        lnode* curr = *l;
         while(curr->next != NULL){
             curr = curr->next;
         }
         curr->next = new;
     }
 
-    return l;
+    return;
 }
 
 
@@ -60,24 +57,25 @@ int listFind(lnode* l, char* pathname) {
 }
 
 
-lnode* listRemove(lnode* l, char* pathname) {
-    if(l == NULL) {
+void listRemove(lnode** l, char* pathname) {
+    if(*l == NULL) {
         printf("List is empty\n");
-        return NULL;
+        return;
     }
     lnode* prec = NULL;
-    lnode* curr = l;
+    lnode* curr = *l;
     while(curr != NULL) {
-        if(l->pathname == pathname) {
+        if((*l)->pathname == pathname) {
             //file found
             if(prec == NULL) {
                 free(curr);
-                return NULL;
+                *l = NULL;
+                return;
             }
             else {
                 prec->next = curr->next;
                 free(curr);
-                return l;
+                return;
             }
         }
         else {
@@ -88,7 +86,7 @@ lnode* listRemove(lnode* l, char* pathname) {
 
     //file not found
     printf("element not found\n");
-    return l;
+    return;
 }
 
 void listDelete(lnode** l) {
@@ -100,4 +98,5 @@ void listDelete(lnode** l) {
         *l = (*l)->next;
         free(tmp);
     }
+    return;
 }

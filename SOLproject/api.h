@@ -1,74 +1,34 @@
+#define _POSIX_C_SOURCE 199309L
+#include <unistd.h>
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include <ctype.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <time.h>
+#include <util.h>
+#include <conn.h>
 #define UNIX_PATH_MAX 108
-#include <api.h>
 
-static int fdsocket;
+typedef struct request{
+    int code;
+    char pathname[BUFSIZE];
+    int flags;
+} request;
 
-int openConnection(const char* sockname, int msec, const struct timespec abstime) {
+
+int openConnection(const char* sockname, int msec, const struct timespec abstime);
 /*Viene aperta una connessione AF_UNIX al socket file sockname. Se il server non accetta immediatamente la
 richiesta di connessione, la connessione da parte del client viene ripetuta dopo ‘msec’ millisecondi e fino allo
 scadere del tempo assoluto ‘abstime’ specificato come terzo argomento. Ritorna 0 in caso di successo, -1 in caso
 di fallimento, errno viene settato opportunamente.*/
-
-    //socket address set up
-    struct sockaddr_un sa;
-    strncpy(sa.sun_path, sockname, UNIX_PATH_MAX);
-    sa.sun_family = AF_UNIX;
-
-    //socket creation
-    SYSCALL_RETURN("socket", fdsocket, socket(AF_UNIX, SOCK_STREAM, 0), "Socket creation error\n", "");
-
-    //waiting time
-    struct timespec waitTime; 
-    waitTime.tv_nsec = msec * 1000000;
-
-    //current time
-    struct timespec currTime;
-    clock_gettime(CLOCK_REALTIME, &currTime); //missing error checking
-
-    int err = 0;
-    while((err = connect(fdsocket, (struct sockaddr*)&sa, sizeof(sa))) == -1
-            && currTime.tv_sec < abstime.tv_sec) {
-
-        if(nanosleep(&waitTime, NULL) == -1) {
-            //cancella socket?
-            return -1;
-        }
-        if(clock_gettime(CLOCK_REALTIME, &currTime) == -1) {
-            //cancella socket?
-            return -1;        
-        }
-        
-    }
-
-    //è riuscito a connettersi
-    if(err != -1) {
-        return 0;
-    }
-
-    //è scaduto il tempo
-    //cancella socket?
-    //setto errno?
-    return -1;
-}
-
-
-int closeConnection(const char* sockname) {
+int closeConnection(const char* sockname);
 /*Chiude la connessione AF_UNIX associata al socket file sockname. Ritorna 0 in caso di successo, -1 in caso di
 fallimento, errno viene settato opportunamente.*/
-    int err = 0;
-
-    if(sockname == NULL) {
-        //setto errno?
-        return -1;
-    }
-
-    SYSCALL_RETURN("close", err, close(fdsocket), "close error", "");
-
-    return 0;
-}
-
-
-int openFile(const char* pathname, int flags) {
+int openFile(const char* pathname, int flags);
 /*Richiesta di apertura o di creazione di un file. La semantica della openFile dipende dai flags passati come secondo
 argomento che possono essere O_CREATE ed O_LOCK. Se viene passato il flag O_CREATE ed il file esiste già
 memorizzato nel server, oppure il file non esiste ed il flag O_CREATE non è stato specificato, viene ritornato un
@@ -78,126 +38,11 @@ aperto e/o creato in modalità locked, che vuol dire che l’unico che può legg
 processo che lo ha aperto. Il flag O_LOCK può essere esplicitamente resettato utilizzando la chiamata unlockFile,
 descritta di seguito.
 Ritorna 0 in caso di successo, -1 in caso di fallimento, errno viene settato opportunamente.*/
-    if(pathname == NULL){
-            return -1;
-    }
-
-    int err = 0;
-
-    request* req = (request*) malloc(sizeof(request));
-    if (req == NULL) {
-        perror("malloc failed\n");
-        return -1;
-    }
-
-    req->code = 1; //OPENFILE = 1
-    strcpy(req->pathname, pathname);
-    printf("%s\n", req->pathname);
-    req->flags = flags;
-
-    //sending request
-    err = writen(fdsocket, req, sizeof(request));
-    if(err == -1) {
-        perror("writen");
-        fprintf(stderr, "Error in sending request....\n");
-	    return -1;
-    }
-
-    free(req);
-
-    int feedback;
-
-    //Reading server's feedback
-    err = readn(fdsocket, &feedback, sizeof(feedback));
-    if(err == -1) {
-        perror("readn");
-        fprintf(stderr, "Error in reading feedback....\n");
-	    return -1;
-    }
-
-    if(feedback == 0) {
-        printf("openFile %s: success\n", pathname);
-        return 0;
-    }
-    if(feedback == -1) {
-        printf("openFile %s: fail\n", pathname);
-        //seterrno
-        return -1;
-    }
-
-    return 0;
-}
-
-
-int readFile(const char* pathname, void** buf, size_t* size) {
+int readFile(const char* pathname, void** buf, size_t* size);
 /*Legge tutto il contenuto del file dal server (se esiste) ritornando un puntatore ad un'area allocata sullo heap nel
 parametro ‘buf’, mentre ‘size’ conterrà la dimensione del buffer dati (ossia la dimensione in bytes del file letto). In
 caso di errore, ‘buf‘e ‘size’ non sono validi. Ritorna 0 in caso di successo, -1 in caso di fallimento, errno viene
 settato opportunamente.*/
-    if(pathname == NULL){
-            return -1;
-    }
-
-    int n = 0;
-
-    request* req = (request*) malloc(sizeof(request));
-    if (req == NULL) {
-        perror("malloc failed\n");
-        return -1;
-    }
-
-    req->code = 2; //READFILE = 2
-    strcpy(req->pathname, pathname);
-    //req->pathname = pathname;
-
-    //sending request
-    n = writen(fdsocket, req, sizeof(req));
-    if(n == -1) {
-        perror("writen");
-        fprintf(stderr, "Error in sending request....\n");
-	    return -1;
-    }
-
-    free(req);
-
-    int feedback;
-
-    //Reading server's feedback
-    n = readn(fdsocket, &feedback, sizeof(feedback));
-    if(n == -1) {
-        perror("readn");
-        fprintf(stderr, "Error in reading feedback....\n");
-	    return -1;
-    }
-    if(feedback == -1) {
-        printf("openFile %s: fail", pathname);
-        return -1;
-    }
-    if(feedback == 0) {
-        //Reading file's size
-        int siz;
-        n = readn(fdsocket, &siz, sizeof(int));
-        if(n == -1) {
-            perror("readn");
-            fprintf(stderr, "Error in reading file's size....\n");
-	        return -1;
-        }
-        char* fcontent = (char*) malloc(siz);
-        //Reading file's content
-        n = readn(fdsocket, fcontent, siz);
-        if(n == -1) {
-            perror("readn");
-            fprintf(stderr, "Error in reading file....\n");
-	        return -1;
-        }
-
-        *buf = fcontent;
-    }
-    //success
-    return 0;
-}
-
-
 int readNFiles(int N, const char* dirname);
 /*Richiede al server la lettura di ‘N’ files qualsiasi da memorizzare nella directory ‘dirname’ lato client. Se il server
 ha meno di ‘N’ file disponibili, li invia tutti. Se N<=0 la richiesta al server è quella di leggere tutti i file

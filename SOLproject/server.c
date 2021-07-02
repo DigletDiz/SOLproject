@@ -8,22 +8,26 @@
 #include <ctype.h>
 #include <signal.h>
 #include <sys/select.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 
 #include <threadpool.h>
 #include <conn.h>
 #include <util.h>
 #include <worker.h>
 #include <icl_hash.h>
+#include <list.h>
 
 
 typedef struct wargs{
 	long clsock;
 	long shutdown;
 	long wpipe;
-	icl_hash_t** fileht;
-	icl_hash_t** openht;
+	icl_hash_t* fileht;
+	icl_hash_t* openht;
 } wargs;
 
+void worker(void *arg);
 
 int int_compare(void* a, void* b) {
 	if((int*)a == (int*)b) {
@@ -37,9 +41,6 @@ int int_compare(void* a, void* b) {
 //nbuckets = max file number on config
 int file_nbuckets = 1000;
 int open_nbuckets = 20;
-
-icl_hash_t* fileht = icl_hash_create(file_nbuckets, NULL, NULL);
-icl_hash_t* openht = icl_hash_create(open_nbuckets, NULL, int_compare);
 
 
 /**
@@ -192,8 +193,38 @@ int main(int argc, char *argv[]) {
     
     // tengo traccia del file descriptor con id piu' grande
     int fdmax = (listenfd > signal_pipe[0]) ? listenfd : signal_pipe[0];
-	long fdre;
+	int fdre;
 	int n;
+
+	icl_hash_t* fileht = icl_hash_create(file_nbuckets, NULL, NULL);
+	if (!fileht) {
+		fprintf(stderr, "ERRORE FATALE NELLA CREAZIONE DELLA TABELLA HASH\n");
+		unlink(SOCKNAME);
+    	return -1;
+    }
+
+	icl_hash_dump(stdout, fileht);
+
+	char* pippo = "pippo";
+	char* sunus = "Ciao Davide";
+	icl_entry_t* boh = icl_hash_insert(fileht, (void*)pippo, (void*)sunus);
+	if(boh == NULL) {
+		fprintf(stderr, "Errore insert\n");
+		unlink(SOCKNAME);
+    	return -1;
+    }
+
+	//int check = icl_hash_delete(fileht, pippo, free, free);
+
+	//printf("%d", check);
+	//icl_hash_dump(stdout, fileht);
+
+	icl_hash_t* openht = icl_hash_create(open_nbuckets, NULL, NULL);
+	if(!openht) {
+		fprintf(stderr, "ERRORE FATALE NELLA CREAZIONE DELLA TABELLA HASH\n");
+		unlink(SOCKNAME);
+    	return -1;
+    }
 
     volatile long termina=0;
     while(!termina) {
@@ -206,14 +237,30 @@ int main(int argc, char *argv[]) {
 		// cerchiamo di capire da quale fd abbiamo ricevuto una richiesta
 		for(int i=0; i <= fdmax; i++) {
 		    if(FD_ISSET(i, &tmpset)) {
-				long connfd;
+				int connfd;
 				if(i == listenfd) { // e' una nuova richiesta di connessione 
-				    if ((connfd = accept(listenfd, (struct sockaddr*)NULL ,NULL)) == -1) {
+				    if((connfd = accept(listenfd, (struct sockaddr*)NULL ,NULL)) == -1) {
 						perror("accept");
 						goto _exit;
 				    }
 
+					printf("connfd %d\n", connfd);
 					printf("client connesso\n");
+
+					int length = snprintf(NULL, 0, "%d", connfd);
+					char* str = malloc(length + 1);
+					snprintf(str, length + 1, "%d", connfd);
+
+					//lnode* ldat = (lnode*) malloc(sizeof(lnode));
+					//adding client in hashtable
+					flist* hlist = (flist*) malloc(sizeof(flist));
+					hlist->head = NULL;
+					icl_entry_t* prova = icl_hash_insert(openht, (void*)str, (void*)hlist);  
+					if(prova == NULL) {
+						printf("CIAO SUNUS");
+						return -1;
+					}
+					icl_hash_dump(stdout, openht);
 
 					FD_SET(connfd, &set);
 					if(connfd > fdmax) {
@@ -227,7 +274,7 @@ int main(int argc, char *argv[]) {
 				}
 				else if(i == request_pipe[0]) {
 				    //inserisco il descrittore ricevuto nel set
-				    if((n = readn(request_pipe[0], &fdre, sizeof(long))) == -1) {
+				    if((n = readn(request_pipe[0], &fdre, sizeof(int))) == -1) {
 		    			perror("read1: fd perso");
 						continue;
 		    		}
@@ -245,8 +292,8 @@ int main(int argc, char *argv[]) {
 				    args->clsock = i; //client socket
 				    args->shutdown = (long)&termina; //do I need to stop?
 					args->wpipe = (long)request_pipe[1]; //pipe write descriptor
-					args->fileht = &fileht;
-					args->openht = &openht;
+					args->fileht = fileht;
+					args->openht = openht;
 
 					FD_CLR(i, &set);
 					updatemax(set, fdmax);
