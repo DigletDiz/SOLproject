@@ -205,14 +205,18 @@ int main(int argc, char *argv[]) {
 
 	icl_hash_dump(stdout, fileht);
 
-	char* pippo = "pippo";
-	char* sunus = "Ciao Davide";
+	//char* pippo = "pippo";
+	//char* sunus = "Ciao Davide";
+	char* pippo = (char*) malloc(sizeof(char)*BUFSIZE);
+	pippo = "pippo";
+	char* sunus = (char*) malloc(sizeof(char)*BUFSIZE);
+	sunus = "Ciao Davide";
 	icl_entry_t* boh = icl_hash_insert(fileht, (void*)pippo, (void*)sunus);
 	if(boh == NULL) {
 		fprintf(stderr, "Errore insert\n");
 		unlink(SOCKNAME);
     	return -1;
-    }
+	}
 
 	//int check = icl_hash_delete(fileht, pippo, free, free);
 
@@ -312,6 +316,10 @@ int main(int argc, char *argv[]) {
 		    }
 		}
     }
+
+
+	icl_hash_destroy(fileht, free, free);
+	icl_hash_destroy(openht, free, listDestroyicl);
     
     destroyThreadPool(pool, 0);  // notifico che i thread dovranno uscire
 

@@ -89,6 +89,7 @@ Ritorna 0 in caso di successo, -1 in caso di fallimento, errno viene settato opp
         perror("malloc failed\n");
         return -1;
     }
+    memset(req, 0, sizeof(request));
 
     req->code = 1; //OPENFILE = 1
     strcpy(req->pathname, pathname);
@@ -145,13 +146,15 @@ settato opportunamente.*/
         perror("malloc failed\n");
         return -1;
     }
+    memset(req, 0, sizeof(request));
 
     req->code = 2; //READFILE = 2
     strcpy(req->pathname, pathname);
     //req->pathname = pathname;
-
+    printf("%d\n", req->code);
+    printf("%s\n", req->pathname);
     //sending request
-    n = writen(fdsocket, req, sizeof(req));
+    n = writen(fdsocket, req, sizeof(request));
     if(n == -1) {
         perror("writen");
         fprintf(stderr, "Error in sending request....\n");
@@ -170,7 +173,7 @@ settato opportunamente.*/
 	    return -1;
     }
     if(feedback == -1) {
-        printf("openFile %s: fail", pathname);
+        printf("openFile %s: fail\n", pathname);
         return -1;
     }
     if(feedback == 0) {

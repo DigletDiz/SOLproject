@@ -20,11 +20,11 @@ typedef struct wargs{
 
 
 //write server feedback
-void serverfb(long connfd, int fb) {
+void serverfb(int connfd, int fb) {
 
 	int feedback = fb;
 	int err;
-	err = writen(connfd, &feedback, sizeof(int));
+	err = writen((long)connfd, &feedback, sizeof(int));
     if(err == -1) {
     	perror("writen");
     	fprintf(stderr, "Error in sending feedback....\n");
@@ -52,16 +52,18 @@ void worker(void *arg) {
         perror("malloc failed\n");
         return;
     }
+	memset(req, 0, sizeof(request));
 
 	int err = 0;
 
+	printf("WORKER INIZIO\n");
 	//reading client's request		
-	if((err = readn(connfd, req, sizeof(request))) == -1) {
+	if((err = readn((long)connfd, req, sizeof(request))) == -1) {
 	    perror("readn");
         fprintf(stderr, "Error in reading request....\n");
 
 		//writing back file descriptor
-		if((err = writen(wep, &connfd, sizeof(long))) == -1) {
+		if((err = writen((long)wep, &connfd, sizeof(int))) == -1) {
 		    perror("pipe write\n");
 		    return;
 		}
@@ -75,16 +77,18 @@ void worker(void *arg) {
 		char* str = malloc(length + 1);
 		snprintf(str, length + 1, "%d", connfd);
 
-		flist* ln = icl_hash_find(openht, (void*)str);
+		//flist* ln = icl_hash_find(openht, (void*)str);
 		//printf("%s\n", ln->head->pathname);
-		listDelete(&(ln->head));
-		int check = icl_hash_delete(openht, (void*)str, free, free);
+		//listDelete(&(ln->head));
+		int check = icl_hash_delete(openht, (void*)str, free, listDestroyicl);
 		if(!check) {
 			printf("Rimosso client dall'hashtable con successo\n");
 		}
 		else {
 			printf("Rimozione fallita\n");
 		}
+		free(req);
+		free(str);
 		close(connfd);
 		printf("Client %d closed\n", connfd);
 		return;
@@ -100,7 +104,8 @@ void worker(void *arg) {
 		case 1://OPENFILE
 		{
 			int flags = req->flags;
-			char* pathname = req->pathname;
+			char* pathname = (char*) malloc(sizeof(char)*BUFSIZE);
+			strcpy(pathname, req->pathname);
 			
 			if(flags == 0) { //0 = no flags
 				char* data = icl_hash_find(fileht, (void*)pathname);
@@ -116,7 +121,20 @@ void worker(void *arg) {
 
 				//inserting in the openhashtable the opened file for the client
 				flist* dt = icl_hash_find(openht, (void*)str);
+				if(dt == NULL) {
+					printf("Open file: Client not found\n");
+					serverfb(connfd, -1); //sending error
+					break;
+				}
 				listInsertHead(&(dt->head), pathname);
+
+				//printf("Aggiunto %s\n", dt->head->pathname);
+
+				/*//rimanda il descrittore al main thread
+				if((err = writen(wep, (void*)&connfd, sizeof(int))) == -1) {
+	    			perror("pipe write\n");
+	    			return;
+				}*/
 
 				/*icl_entry_t* newo = icl_hash_insert(openht, (void*)connfd, (void*)pathname);
 				if(newo == NULL) {
@@ -124,8 +142,10 @@ void worker(void *arg) {
 					serverfb(connfd, -1); //sending error
 					break;
 				}*/
+				free(str);
 
 				printf("File %s opened for client %d\n", pathname, connfd);
+				
 				serverfb(connfd, 0); //sending success
 			}
 			else if(flags == 1) { //1 = O_CREATE
@@ -150,7 +170,7 @@ void worker(void *arg) {
 				break;
 			}
 			else if(flags == 2) {printf("O_LOCK not supported\n");serverfb(connfd, -1);} //O_LOCK
-			else if(flags == 3) {printf("O_LOCK not supported\n");serverfb(connfd, -1);} //O_CREATE & O_LOCK
+			else if(flags == 3) {printf("O_LOCK not supported\n");serverfb(connfd, -1);} //O_CREATE && O_LOCK
 			else {printf("flags not recognized");serverfb(connfd, -1);}
 
 			break;
@@ -166,33 +186,39 @@ void worker(void *arg) {
 				break;
 			}
 
+			int length = snprintf(NULL, 0, "%d", connfd);
+			char* str = malloc(length + 1);
+			snprintf(str, length + 1, "%d", connfd);
+
 			//Did the client open the file?
-			lnode* opfilel = icl_hash_find(openht, (void*)&connfd);
+			flist* opfilel = icl_hash_find(openht, (void*)str);
 			if(opfilel == NULL) {
-				printf("Client not found\n");
+				printf("Read file: Client not found\n");
 				serverfb(connfd, -1); //sending error
 				break;
 			}
-			int found = listFind(opfilel, pathname);
+			int found = listFind(opfilel->head, pathname);
 			if(found == -1) {
 				printf("Client %d must open file %s before trying to read it\n", connfd, pathname);
 				serverfb(connfd, -1); //sending error
 				break;
 			}
 
+			free(str);
+
 			serverfb(connfd, 0); //sending success
 
-			int datasize = sizeof(data);
+			int datasize = strlen(data);
 
 			//writing file's size to the client 
-			err = writen(connfd, &datasize, sizeof(int));
+			err = writen((long)connfd, &datasize, sizeof(int));
     		if(err == -1) {
     			perror("writen");
     			fprintf(stderr, "Error in sending file's size....\n");
 				break;
 			}
 			//writing file to the client 
-			err = writen(connfd, data, sizeof(data));
+			err = writen((long)connfd, data, datasize);
     		if(err == -1) {
     			perror("writen");
     			fprintf(stderr, "Error in sending file's data....\n");
@@ -222,12 +248,12 @@ void worker(void *arg) {
 
 	}
 
-	printf("Pronto a concludere la richiesta\n");
+	printf("Richiesta conclusa\n");
 
-	//free(req);
+	free(req);
 
 	//rimanda il descrittore al main thread
-	if((err = writen(wep, (void*)&connfd, sizeof(int))) == -1) {
+	if((err = writen((long)wep, (void*)&connfd, sizeof(int))) == -1) {
 	    perror("pipe write\n");
 	    return;
 	}

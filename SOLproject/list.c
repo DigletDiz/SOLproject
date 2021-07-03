@@ -3,7 +3,7 @@
 
 void listInsertHead(lnode** l, char* pathname) {
     lnode* new = (lnode*) malloc(sizeof(lnode));
-    if (new == NULL) {
+    if(new == NULL) {
         perror("malloc failed");
         return;
     }
@@ -19,7 +19,7 @@ void listInsertHead(lnode** l, char* pathname) {
 
 void listInsertTail(lnode** l, char* pathname) {
     lnode* new = (lnode*) malloc(sizeof(lnode));
-    if (new == NULL) {
+    if(new == NULL) {
         perror("malloc failed");
         return;
     }
@@ -44,7 +44,7 @@ void listInsertTail(lnode** l, char* pathname) {
 
 int listFind(lnode* l, char* pathname) {
     while(l != NULL) {
-        if(l->pathname == pathname) {
+        if(strcmp(l->pathname, pathname) == 0) {
             return 0; //file found
         }
         else {
@@ -65,15 +65,17 @@ void listRemove(lnode** l, char* pathname) {
     lnode* prec = NULL;
     lnode* curr = *l;
     while(curr != NULL) {
-        if((*l)->pathname == pathname) {
+        if(strcmp((*l)->pathname, pathname) == 0) {
             //file found
             if(prec == NULL) {
+                free(curr->pathname);
                 free(curr);
                 *l = NULL;
                 return;
             }
             else {
                 prec->next = curr->next;
+                free(curr->pathname);
                 free(curr);
                 return;
             }
@@ -89,6 +91,7 @@ void listRemove(lnode** l, char* pathname) {
     return;
 }
 
+
 void listDelete(lnode** l) {
 
     lnode* tmp;
@@ -96,7 +99,32 @@ void listDelete(lnode** l) {
     while(*l != NULL) {
         tmp = *l;
         *l = (*l)->next;
+        free(tmp->pathname);
         free(tmp);
     }
+    return;
+}
+
+
+void listDestroy(flist* fli) {
+
+    if(fli == NULL) {
+        perror("error: the list in null");
+        return;
+    }
+
+    lnode* l = fli->head;
+    listDelete(&l);
+    free(fli);
+    fli = NULL;
+
+    return;
+}
+
+
+//just for icl_destroy
+void listDestroyicl(void* fli) {
+
+    listDestroy((flist*)fli);
     return;
 }
