@@ -32,7 +32,7 @@ int main(int argc, char* argv[]) {
     q = qcreate();
 
     optParse(argc, argv);
-    printf("Fuori dal parse\n");
+    //printf("Fuori dal parse\n");
 
     int err;
     struct timespec abstime;
@@ -44,7 +44,7 @@ int main(int argc, char* argv[]) {
     printf("Connected!\n");
 
     optExe();
-    printf("Fuori dall'exe\n");
+    //printf("Fuori dall'exe\n");
 
     return 0; 
 }
@@ -65,7 +65,7 @@ void optParse(int argc, char* argv[]) {
             case 'D':
                 break;
             case 'r':
-                printf("Sono in parse opt = r\n");
+                //printf("Sono in parse opt = r\n");
                 arval = optarg;
                 enqueue(q, 'r', (void*)arval);
                 break;
@@ -113,16 +113,16 @@ void optExe() {
 
     while(q->head != NULL) {
 
-        printf("Sono in exe\n");
+        //printf("Sono in exe\n");
         curr = pop(q);
 
         SYSCALL_PRINT("openFile", err, openFile((char*)(curr->data), 0), "Open error\n", "");
-        //if(err == 0) {printf("File aperto con successo\n");}
+        if(err == 0) {printf("File aperto con successo\n");}
         SYSCALL_PRINT("readFile", err, readFile((char*)(curr->data), (void**)&buf, &sis), "Read error\n", "");
-        //if(err == 0) {printf("File letto con successo\n");printf("Contenuto letto: %s\n", buf);}
-        printf("Contenuto letto: %s\n", buf);
-        //SYSCALL_PRINT("closeFile", err, closeFile((char*)(curr->data)), "Close error\n");
-
+        if(err == 0) {printf("File letto con successo\n");printf("Contenuto letto: %s\n", buf);}
+        SYSCALL_PRINT("closeFile", err, closeFile((char*)(curr->data)), "Close error\n", "");
+        if(err == 0) {printf("File chiuso con successo\n");}
+       
         free(curr);
     }
 

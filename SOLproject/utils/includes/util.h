@@ -36,10 +36,7 @@
 	int errno_copy = errno;			\
 	print_error(str, __VA_ARGS__);		\
 	errno = errno_copy;			\
-    }    \
-    else {    \
-  perror(#name);    \
-  }
+    }    
 
 #define SYSCALL_RETURN(name, r, sc, str, ...)	\
     if ((r=sc) == -1) {				\
@@ -65,6 +62,19 @@
 	print_error(str, __VA_ARGS__);		\
 	exit(errno_copy);			\
     }
+
+enum OP_CODE {
+    OPENFILE = 0,
+    READFILE = 1,
+    READNFILES = 2,
+    WRITEFILE = 3,
+    APPENDTOFILE = 4,
+    LOCKFILE = 5,
+    UNLOCKFILE = 6, 
+    CLOSEFILE = 7,
+    REMOVEFILE = 8,
+    CLOSECONNECTION = 9
+};
 
 /**
  * \brief Procedura di utilita' per la stampa degli errori

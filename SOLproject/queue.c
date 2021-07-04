@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include "queue.h"
+#include <queue.h>
 
 queue* qcreate() {
     queue* new = (queue*) malloc(sizeof(queue));

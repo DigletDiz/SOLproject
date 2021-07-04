@@ -68,14 +68,12 @@ void listRemove(lnode** l, char* pathname) {
         if(strcmp((*l)->pathname, pathname) == 0) {
             //file found
             if(prec == NULL) {
-                free(curr->pathname);
                 free(curr);
                 *l = NULL;
                 return;
             }
             else {
                 prec->next = curr->next;
-                free(curr->pathname);
                 free(curr);
                 return;
             }
@@ -99,7 +97,6 @@ void listDelete(lnode** l) {
     while(*l != NULL) {
         tmp = *l;
         *l = (*l)->next;
-        free(tmp->pathname);
         free(tmp);
     }
     return;

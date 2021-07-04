@@ -101,7 +101,7 @@ void worker(void *arg) {
 
 	switch(opcode) {
 
-		case 1://OPENFILE
+		case OPENFILE:
 		{
 			int flags = req->flags;
 			char* pathname = (char*) malloc(sizeof(char)*BUFSIZE);
@@ -175,7 +175,7 @@ void worker(void *arg) {
 
 			break;
 		}
-		case 2: //READFILE
+		case READFILE:
 		{
 			//Does the file exist?
 			char* pathname = req->pathname;
@@ -229,23 +229,53 @@ void worker(void *arg) {
 
 			break;
 		}
-		case 3: //READNFILES
+		case READNFILES:
 			break;
-		case 4: //WRITEFILE
+		case WRITEFILE:
 			break;
-		case 5: //APPENDFILE
+		case APPENDTOFILE:
 			break;
-		case 6: //LOCKFILE
+		case LOCKFILE:
 			break;
-		case 7: //UNLOCKFILE
+		case UNLOCKFILE:
 			break;
-		case 8: //CLOSEFILE
+		case CLOSEFILE:
+		{
+			char* pathname = req->pathname;
+				
+			char* data = icl_hash_find(fileht, (void*)pathname);
+			if(data == NULL) {
+				printf("File %s doesn't exist\n", pathname);
+				serverfb(connfd, 1); //sending error
+				break;
+			}
+
+			//converting connfd in str
+			int length = snprintf(NULL, 0, "%d", connfd);
+			char* str = malloc(length + 1);
+			snprintf(str, length + 1, "%d", connfd);
+
+			//closing the file for the client
+			flist* dt = icl_hash_find(openht, (void*)str);
+			if(dt == NULL) {
+				printf("Close file: Client not found\n");
+				serverfb(connfd, 1); //sending error
+				break;
+			}
+			listRemove(&(dt->head), pathname);
+			free(str);
+			printf("File %s closed for client %d\n", pathname, connfd);
+			
+			serverfb(connfd, 0); //sending success
+
 			break;
-		case 9: //REMOVEFILE
+		}
+		case REMOVEFILE:
+			break;
+		case CLOSECONNECTION:
 			break;
 		default:
 			break;
-
 	}
 
 	printf("Richiesta conclusa\n");

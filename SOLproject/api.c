@@ -15,26 +15,38 @@ di fallimento, errno viene settato opportunamente.*/
     sa.sun_family = AF_UNIX;
 
     //socket creation
-    SYSCALL_RETURN("socket", fdsocket, socket(AF_UNIX, SOCK_STREAM, 0), "Socket creation error\n", "");
+    if((fdsocket = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
+        return -1;
+    }
 
     //waiting time
     struct timespec waitTime; 
     waitTime.tv_nsec = msec * 1000000;
 
     //current time
-    struct timespec currTime;
-    clock_gettime(CLOCK_REALTIME, &currTime); //missing error checking
-
     int err = 0;
+    int errnocpy = 0;
+    struct timespec currTime;
+    if((err = clock_gettime(CLOCK_REALTIME, &currTime)) == -1) {
+        errnocpy = errno;
+        close(fdsocket);
+        errno = errnocpy;
+        return -1;
+    }
+
     while((err = connect(fdsocket, (struct sockaddr*)&sa, sizeof(sa))) == -1
             && currTime.tv_sec < abstime.tv_sec) {
 
-        if(nanosleep(&waitTime, NULL) == -1) {
-            //cancella socket?
+        if((err = nanosleep(&waitTime, NULL)) == -1) {
+            errnocpy = errno;
+            close(fdsocket);
+            errno = errnocpy;
             return -1;
         }
-        if(clock_gettime(CLOCK_REALTIME, &currTime) == -1) {
-            //cancella socket?
+        if((err = clock_gettime(CLOCK_REALTIME, &currTime)) == -1) {
+            errnocpy = errno;
+            close(fdsocket);
+            errno = errnocpy;
             return -1;        
         }
         
@@ -46,8 +58,8 @@ di fallimento, errno viene settato opportunamente.*/
     }
 
     //è scaduto il tempo
-    //cancella socket?
-    //setto errno?
+    close(fdsocket);
+    errno = ETIMEDOUT;
     return -1;
 }
 
@@ -55,14 +67,15 @@ di fallimento, errno viene settato opportunamente.*/
 int closeConnection(const char* sockname) {
 /*Chiude la connessione AF_UNIX associata al socket file sockname. Ritorna 0 in caso di successo, -1 in caso di
 fallimento, errno viene settato opportunamente.*/
-    int err = 0;
 
     if(sockname == NULL) {
-        //setto errno?
+        errno = EFAULT;
         return -1;
     }
 
-    SYSCALL_RETURN("close", err, close(fdsocket), "close error", "");
+    if(close(fdsocket) == -1) {
+        return -1;
+    }
 
     return 0;
 }
@@ -78,29 +91,28 @@ aperto e/o creato in modalità locked, che vuol dire che l’unico che può legg
 processo che lo ha aperto. Il flag O_LOCK può essere esplicitamente resettato utilizzando la chiamata unlockFile,
 descritta di seguito.
 Ritorna 0 in caso di successo, -1 in caso di fallimento, errno viene settato opportunamente.*/
-    if(pathname == NULL){
-            return -1;
+    if(pathname == NULL) {
+        errno = EFAULT;
+        return -1;
     }
 
     int err = 0;
 
     request* req = (request*) malloc(sizeof(request));
     if (req == NULL) {
-        perror("malloc failed\n");
+        //perror("malloc failed\n");
+        errno = ENOMEM;
         return -1;
     }
     memset(req, 0, sizeof(request));
 
-    req->code = 1; //OPENFILE = 1
+    req->code = OPENFILE;
     strcpy(req->pathname, pathname);
-    printf("%s\n", req->pathname);
+    //printf("%s\n", req->pathname);
     req->flags = flags;
 
     //sending request
-    err = writen(fdsocket, req, sizeof(request));
-    if(err == -1) {
-        perror("writen");
-        fprintf(stderr, "Error in sending request....\n");
+    if((err = writen(fdsocket, req, sizeof(request))) == -1) {
 	    return -1;
     }
 
@@ -109,15 +121,11 @@ Ritorna 0 in caso di successo, -1 in caso di fallimento, errno viene settato opp
     int feedback;
 
     //Reading server's feedback
-    err = readn(fdsocket, &feedback, sizeof(feedback));
-    if(err == -1) {
-        perror("readn");
-        fprintf(stderr, "Error in reading feedback....\n");
+    if((err = readn(fdsocket, &feedback, sizeof(int))) == -1) {
 	    return -1;
     }
 
     if(feedback == 0) {
-        errno = 0;
         return 0;
     }
     else {
@@ -135,31 +143,27 @@ parametro ‘buf’, mentre ‘size’ conterrà la dimensione del buffer dati (
 caso di errore, ‘buf‘e ‘size’ non sono validi. Ritorna 0 in caso di successo, -1 in caso di fallimento, errno viene
 settato opportunamente.*/
     if(pathname == NULL) {
-        //set errno
+        errno = EFAULT;
         return -1;
     }
 
-    int n = 0;
+    int err = 0;
 
     request* req = (request*) malloc(sizeof(request));
     if(req == NULL) {
-        perror("malloc failed\n");
-        //set errno
+        //perror("malloc failed\n");
+        errno = ENOMEM;
         return -1;
     }
     memset(req, 0, sizeof(request));
 
-    req->code = 2; //READFILE = 2
+    req->code = READFILE;
     strcpy(req->pathname, pathname);
     //req->pathname = pathname;
-    printf("Codice: %d\n", req->code);
-    printf("Path: %s\n", req->pathname);
+    //printf("Codice: %d\n", req->code);
+    //printf("Path: %s\n", req->pathname);
     //sending request
-    n = writen(fdsocket, req, sizeof(request));
-    if(n == -1) {
-        perror("writen");
-        fprintf(stderr, "Error in sending request....\n");
-        //set errno
+    if((err = writen(fdsocket, req, sizeof(request))) == -1) {
 	    return -1;
     }
 
@@ -168,41 +172,28 @@ settato opportunamente.*/
     int feedback;
 
     //Reading server's feedback
-    n = readn(fdsocket, &feedback, sizeof(feedback));
-    if(n == -1) {
-        perror("readn");
-        fprintf(stderr, "Error in reading feedback....\n");
-        //set errno
+    if((err = readn(fdsocket, &feedback, sizeof(int))) == -1) {
 	    return -1;
-    }
-    if(feedback == -1) {
-        printf("openFile %s: fail\n", pathname);
-        //set errno
-        return -1;
     }
     if(feedback == 0) {
         //Reading file's size
         int siz;
-        n = readn(fdsocket, &siz, sizeof(int));
-        if(n == -1) {
-            perror("readn");
-            fprintf(stderr, "Error in reading file's size....\n");
-            //set errno
+        if((err = readn(fdsocket, &siz, sizeof(int))) == -1) {
 	        return -1;
         }
-        char* fcontent = (char*) malloc(siz);
         //Reading file's content
-        n = readn(fdsocket, fcontent, siz);
-        if(n == -1) {
-            perror("readn");
-            fprintf(stderr, "Error in reading file....\n");
-            //set errno
+        char* fcontent = (char*) malloc(siz);
+        if((err = readn(fdsocket, fcontent, siz)) == -1) {
 	        return -1;
         }
 
         *buf = fcontent;
     }
-    //success
+    else {
+        errno = feedback;
+        return -1;
+    }
+
     return 0;
 }
 
@@ -232,9 +223,48 @@ int unlockFile(const char* pathname);
 /*Resetta il flag O_LOCK sul file ‘pathname’. L’operazione ha successo solo se l’owner della lock è il processo che
 ha richiesto l’operazione, altrimenti l’operazione termina con errore. Ritorna 0 in caso di successo, -1 in caso di
 fallimento, errno viene settato opportunamente.*/
-int closeFile(const char* pathname);
+
+
+int closeFile(const char* pathname) {
 /*Richiesta di chiusura del file puntato da ‘pathname’. Eventuali operazioni sul file dopo la closeFile falliscono.
 Ritorna 0 in caso di successo, -1 in caso di fallimento, errno viene settato opportunamente.*/
+    if(pathname == NULL) {
+        errno = ENOENT;
+        return -1;
+    }
+    request* req = (request*) malloc(sizeof(request));
+    if (req == NULL) {
+        errno = ENOMEM;
+        return -1;
+    }
+    memset(req, 0, sizeof(request));
+
+    req->code = CLOSEFILE;
+    strcpy(req->pathname, pathname);
+    //printf("%s\n", req->pathname);
+
+    //sending request
+    int err = 0;
+    SYSCALL_RETURN("writen", err, writen(fdsocket, req, sizeof(request)), "Writing request\n", "");
+    
+    free(req);
+
+    //Reading server's feedback
+    int feedback;
+    SYSCALL_RETURN("readn", err, readn(fdsocket, &feedback, sizeof(int)), "Reading feedback\n", "");
+    
+    if(feedback == 0) {
+        errno = 0;
+        return 0;
+    }
+    else {
+        errno = feedback;
+        return -1;
+    }
+    return 0;
+}
+
+
 int removeFile(const char* pathname);
 /*Rimuove il file cancellandolo dal file storage server. L’operazione fallisce se il file non è in stato locked, o è in
 stato locked da parte di un processo client diverso da chi effettua la removeFile.*/

@@ -207,8 +207,7 @@ int main(int argc, char *argv[]) {
 
 	//char* pippo = "pippo";
 	//char* sunus = "Ciao Davide";
-	char* pippo = (char*) malloc(sizeof(char)*BUFSIZE);
-	pippo = "pippo";
+	char* pippo = "pippo";
 	char* sunus = (char*) malloc(sizeof(char)*BUFSIZE);
 	sunus = "Ciao Davide";
 	icl_entry_t* boh = icl_hash_insert(fileht, (void*)pippo, (void*)sunus);
@@ -319,7 +318,7 @@ int main(int argc, char *argv[]) {
     }
 
 
-	icl_hash_destroy(fileht, free, free);
+	icl_hash_destroy(fileht, NULL, free);
 	icl_hash_destroy(openht, free, listDestroyicl);
     
     destroyThreadPool(pool, 0);  // notifico che i thread dovranno uscire
