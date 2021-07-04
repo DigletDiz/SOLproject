@@ -32,11 +32,14 @@
 
 #define SYSCALL_PRINT(name, r, sc, str, ...)	\
     if ((r=sc) == -1) {				\
-	perror(#name);				\
+	perror(#name);			\
 	int errno_copy = errno;			\
 	print_error(str, __VA_ARGS__);		\
 	errno = errno_copy;			\
-    }
+    }    \
+    else {    \
+  perror(#name);    \
+  }
 
 #define SYSCALL_RETURN(name, r, sc, str, ...)	\
     if ((r=sc) == -1) {				\

@@ -117,12 +117,11 @@ Ritorna 0 in caso di successo, -1 in caso di fallimento, errno viene settato opp
     }
 
     if(feedback == 0) {
-        printf("openFile %s: success\n", pathname);
+        errno = 0;
         return 0;
     }
-    if(feedback == -1) {
-        printf("openFile %s: fail\n", pathname);
-        //seterrno
+    else {
+        errno = feedback;
         return -1;
     }
 
@@ -135,15 +134,17 @@ int readFile(const char* pathname, void** buf, size_t* size) {
 parametro ‘buf’, mentre ‘size’ conterrà la dimensione del buffer dati (ossia la dimensione in bytes del file letto). In
 caso di errore, ‘buf‘e ‘size’ non sono validi. Ritorna 0 in caso di successo, -1 in caso di fallimento, errno viene
 settato opportunamente.*/
-    if(pathname == NULL){
-            return -1;
+    if(pathname == NULL) {
+        //set errno
+        return -1;
     }
 
     int n = 0;
 
     request* req = (request*) malloc(sizeof(request));
-    if (req == NULL) {
+    if(req == NULL) {
         perror("malloc failed\n");
+        //set errno
         return -1;
     }
     memset(req, 0, sizeof(request));
@@ -151,13 +152,14 @@ settato opportunamente.*/
     req->code = 2; //READFILE = 2
     strcpy(req->pathname, pathname);
     //req->pathname = pathname;
-    printf("%d\n", req->code);
-    printf("%s\n", req->pathname);
+    printf("Codice: %d\n", req->code);
+    printf("Path: %s\n", req->pathname);
     //sending request
     n = writen(fdsocket, req, sizeof(request));
     if(n == -1) {
         perror("writen");
         fprintf(stderr, "Error in sending request....\n");
+        //set errno
 	    return -1;
     }
 
@@ -170,10 +172,12 @@ settato opportunamente.*/
     if(n == -1) {
         perror("readn");
         fprintf(stderr, "Error in reading feedback....\n");
+        //set errno
 	    return -1;
     }
     if(feedback == -1) {
         printf("openFile %s: fail\n", pathname);
+        //set errno
         return -1;
     }
     if(feedback == 0) {
@@ -183,6 +187,7 @@ settato opportunamente.*/
         if(n == -1) {
             perror("readn");
             fprintf(stderr, "Error in reading file's size....\n");
+            //set errno
 	        return -1;
         }
         char* fcontent = (char*) malloc(siz);
@@ -191,6 +196,7 @@ settato opportunamente.*/
         if(n == -1) {
             perror("readn");
             fprintf(stderr, "Error in reading file....\n");
+            //set errno
 	        return -1;
         }
 

@@ -11,6 +11,7 @@
 #include <time.h>
 #include <util.h>
 #include <conn.h>
+#include <errno.h>
 #define UNIX_PATH_MAX 108
 
 typedef struct request{

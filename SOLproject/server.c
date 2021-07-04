@@ -248,8 +248,7 @@ int main(int argc, char *argv[]) {
 						goto _exit;
 				    }
 
-					printf("connfd %d\n", connfd);
-					printf("client connesso\n");
+					printf("client %d connesso\n", connfd);
 
 					int length = snprintf(NULL, 0, "%d", connfd);
 					char* str = malloc(length + 1);
@@ -261,14 +260,16 @@ int main(int argc, char *argv[]) {
 					hlist->head = NULL;
 					icl_entry_t* prova = icl_hash_insert(openht, (void*)str, (void*)hlist);  
 					if(prova == NULL) {
+						//set errno
 						printf("CIAO SUNUS");
 						return -1;
 					}
-					icl_hash_dump(stdout, openht);
-
-					FD_SET(connfd, &set);
-					if(connfd > fdmax) {
-						fdmax = connfd;
+					//icl_hash_dump(stdout, openht);
+					else {
+						FD_SET(connfd, &set);
+						if(connfd > fdmax) {
+							fdmax = connfd;
+						}
 					}
 				}
 				else if(i == signal_pipe[0]) {

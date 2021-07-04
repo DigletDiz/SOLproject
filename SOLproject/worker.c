@@ -111,7 +111,7 @@ void worker(void *arg) {
 				char* data = icl_hash_find(fileht, (void*)pathname);
 				if(data == NULL) {
 					printf("File %s doesn't exist\n", pathname);
-					serverfb(connfd, -1); //sending error
+					serverfb(connfd, 1); //sending error
 					break;
 				}
 
@@ -123,7 +123,7 @@ void worker(void *arg) {
 				flist* dt = icl_hash_find(openht, (void*)str);
 				if(dt == NULL) {
 					printf("Open file: Client not found\n");
-					serverfb(connfd, -1); //sending error
+					serverfb(connfd, 1); //sending error
 					break;
 				}
 				listInsertHead(&(dt->head), pathname);
@@ -153,7 +153,7 @@ void worker(void *arg) {
 				icl_entry_t* new = icl_hash_insert(fileht, (void*)pathname, (void*)data);
 				if(new == NULL) {
 					printf("File %s already exists\n", pathname);
-					serverfb(connfd, -1); //sending error
+					serverfb(connfd, 1); //sending error
 					break;
 				}
 				printf("File %s inserted in the storage\n", pathname);
@@ -161,11 +161,11 @@ void worker(void *arg) {
 				icl_entry_t* newt = icl_hash_insert(openht, (void*)&connfd, (void*)pathname);
 				if(newt == NULL) {
 					perror("Error: insert in hashtable\n");
-					serverfb(connfd, -1); //sending error
+					serverfb(connfd, 1); //sending error
 					break;
 				}
 
-				printf("File %s opened for client %d\n", pathname, (int)connfd);
+				printf("File %s opened for client %d\n", pathname, connfd);
 				serverfb(connfd, 0); //sending success
 				break;
 			}
@@ -182,7 +182,7 @@ void worker(void *arg) {
 			char* data = icl_hash_find(fileht, (void*)pathname);
 			if(data == NULL) {
 				printf("File %s doesn't exist\n", pathname);
-				serverfb(connfd, -1); //sending error
+				serverfb(connfd, 1); //sending error
 				break;
 			}
 
@@ -194,13 +194,13 @@ void worker(void *arg) {
 			flist* opfilel = icl_hash_find(openht, (void*)str);
 			if(opfilel == NULL) {
 				printf("Read file: Client not found\n");
-				serverfb(connfd, -1); //sending error
+				serverfb(connfd, 1); //sending error
 				break;
 			}
 			int found = listFind(opfilel->head, pathname);
 			if(found == -1) {
 				printf("Client %d must open file %s before trying to read it\n", connfd, pathname);
-				serverfb(connfd, -1); //sending error
+				serverfb(connfd, 1); //sending error
 				break;
 			}
 
