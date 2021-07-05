@@ -198,11 +198,93 @@ settato opportunamente.*/
 }
 
 
-int readNFiles(int N, const char* dirname);
+int readNFiles(int N, const char* dirname) {
 /*Richiede al server la lettura di ‘N’ files qualsiasi da memorizzare nella directory ‘dirname’ lato client. Se il server
 ha meno di ‘N’ file disponibili, li invia tutti. Se N<=0 la richiesta al server è quella di leggere tutti i file
 memorizzati al suo interno. Ritorna un valore maggiore o uguale a 0 in caso di successo (cioè ritorna il n. di file
 effettivamente letti), -1 in caso di fallimento, errno viene settato opportunamente.*/
+    if(dirname == NULL) {
+        errno = EFAULT;
+        return -1;
+    }
+
+    int err = 0;
+
+    request* req = (request*) malloc(sizeof(request));
+    if(req == NULL) {
+        //perror("malloc failed\n");
+        errno = ENOMEM;
+        return -1;
+    }
+    memset(req, 0, sizeof(request));
+
+    req->code = READNFILES;
+    req->nfiles = N;
+
+    //sending request
+    if((err = writen(fdsocket, req, sizeof(request))) == -1) {
+	    return -1;
+    }
+
+    free(req);
+
+    int feedback;
+
+    //Reading server's feedback
+    if((err = readn(fdsocket, &feedback, sizeof(int))) == -1) {
+	    return -1;
+    }
+    if(feedback == 0) {
+        int howmany = 0;
+        if((err = readn(fdsocket, &howmany, sizeof(int))) == -1) {
+	        return -1;
+        }
+
+        //creating the realpath, creating directory if it doesn't exist
+        char* realp = realpath(dirname, NULL);
+        if(!realp) {
+            mkdir(dirname);
+            realp = realpath(dirname, NULL);
+        }
+
+        char* dir = (char*) malloc(sizeof(char)*BUFSIZE);
+        strcpy(dir, realp);
+        char* slash = "/";
+        char* name = (char*) malloc(sizeof(char)*BUFSIZE);
+        char* cont = (char*) malloc(sizeof(char)*BUFSIZE);
+        int i;
+        for(i=0;i<howmany;i++) {
+            if((err = readn(fdsocket, name, sizeof(char)*BUFSIZE)) == -1) {
+	            return -1;
+            }
+            if((err = readn(fdsocket, cont, sizeof(char)*BUFSIZE)) == -1) {
+	            return -1;
+            }
+
+            strcat(dir, slash);
+            strcat(dir, name);
+
+            FILE* newfile = fopen(dir, w);
+            fprintf(newfile, cont);
+            fclose(newfile);
+
+            //dir reset
+            strcpy(dir, realp);
+        }
+        free(realp);
+        free(dir);
+        free(name);
+        free(cont);
+    }
+    else {
+        errno = feedback;
+        return -1;
+    }
+
+    return 0;
+}
+
+
 int writeFile(const char* pathname, const char* dirname);
 /*Scrive tutto il file puntato da pathname nel file server. Ritorna successo solo se la precedente operazione,
 terminata con successo, è stata openFile(pathname, O_CREATE| O_LOCK). Se ‘dirname’ è diverso da NULL, il
@@ -245,13 +327,17 @@ Ritorna 0 in caso di successo, -1 in caso di fallimento, errno viene settato opp
 
     //sending request
     int err = 0;
-    SYSCALL_RETURN("writen", err, writen(fdsocket, req, sizeof(request)), "Writing request\n", "");
+    if((err = writen(fdsocket, req, sizeof(request))) == -1) {
+        return -1;
+    }
     
     free(req);
 
     //Reading server's feedback
     int feedback;
-    SYSCALL_RETURN("readn", err, readn(fdsocket, &feedback, sizeof(int)), "Reading feedback\n", "");
+    if((err = readn(fdsocket, &feedback, sizeof(int))) == -1) {
+        return -1;
+    }
     
     if(feedback == 0) {
         errno = 0;

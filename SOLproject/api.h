@@ -12,12 +12,15 @@
 #include <util.h>
 #include <conn.h>
 #include <errno.h>
+#include <dirent.h>
+#include <limits.h>
 #define UNIX_PATH_MAX 108
 
 typedef struct request{
     int code;
     char pathname[BUFSIZE];
     int flags;
+    int nfiles;
 } request;
 
 
