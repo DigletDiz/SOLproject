@@ -4,7 +4,7 @@
 #define BUFSIZE 256
 
 typedef struct lnode {
-    char* pathname;
+    char pathname[BUFSIZE];
     struct lnode* next;
 } lnode;
 

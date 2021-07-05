@@ -8,7 +8,7 @@ void listInsertHead(lnode** l, char* pathname) {
         return;
     }
 
-    new->pathname = pathname;
+    strcpy(new->pathname, pathname);
     new->next = *l;
 
     *l = new;
@@ -24,7 +24,7 @@ void listInsertTail(lnode** l, char* pathname) {
         return;
     }
 
-    new->pathname = pathname;
+    strcpy(new->pathname, pathname);
     new->next = NULL;
 
     if(*l == NULL) {
