@@ -1,6 +1,7 @@
 #define UNIX_PATH_MAX 108
 #include <api.h>
 
+
 static int fdsocket;
 
 int openConnection(const char* sockname, int msec, const struct timespec abstime) {
@@ -152,7 +153,7 @@ settato opportunamente.*/
     request* req = (request*) malloc(sizeof(request));
     if(req == NULL) {
         //perror("malloc failed\n");
-        errno = ENOMEM;
+        //errno = ENOMEM;
         return -1;
     }
     memset(req, 0, sizeof(request));
@@ -175,19 +176,18 @@ settato opportunamente.*/
     if((err = readn(fdsocket, &feedback, sizeof(int))) == -1) {
 	    return -1;
     }
-    if(feedback == 0) {
-        //Reading file's size
-        int siz;
-        if((err = readn(fdsocket, &siz, sizeof(int))) == -1) {
-	        return -1;
+    if(feedback == 0) {        
+        reply* rep = (reply*) malloc(sizeof(reply));
+        if(!rep) {
+            //errno = ENOMEM;
+            return -1;
         }
-        //Reading file's content
-        char* fcontent = (char*) malloc(siz);
-        if((err = readn(fdsocket, fcontent, siz)) == -1) {
+
+        if((err = readn(fdsocket, rep, sizeof(reply))) == -1) {
 	        return -1;
         }
 
-        *buf = fcontent;
+        strcpy(*buf, rep->content);
     }
     else {
         errno = feedback;
@@ -228,60 +228,75 @@ effettivamente letti), -1 in caso di fallimento, errno viene settato opportuname
 
     free(req);
 
+    int howmany;
+
+    //Reading how many files I am receiving
+    if((err = readn(fdsocket, &howmany, sizeof(int))) == -1) {
+	    return -1;
+    }
+
     int feedback;
 
     //Reading server's feedback
     if((err = readn(fdsocket, &feedback, sizeof(int))) == -1) {
 	    return -1;
     }
-    if(feedback == 0) {
-        int howmany = 0;
-        if((err = readn(fdsocket, &howmany, sizeof(int))) == -1) {
-	        return -1;
-        }
-
-        //creating the realpath, creating directory if it doesn't exist
-        char* realp = realpath(dirname, NULL);
-        if(!realp) {
-            mkdir(dirname);
-            realp = realpath(dirname, NULL);
-        }
-
-        char* dir = (char*) malloc(sizeof(char)*BUFSIZE);
-        strcpy(dir, realp);
-        char* slash = "/";
-        char* name = (char*) malloc(sizeof(char)*BUFSIZE);
-        char* cont = (char*) malloc(sizeof(char)*BUFSIZE);
-        int i;
-        for(i=0;i<howmany;i++) {
-            if((err = readn(fdsocket, name, sizeof(char)*BUFSIZE)) == -1) {
-	            return -1;
-            }
-            if((err = readn(fdsocket, cont, sizeof(char)*BUFSIZE)) == -1) {
-	            return -1;
-            }
-
-            strcat(dir, slash);
-            strcat(dir, name);
-
-            FILE* newfile = fopen(dir, w);
-            fprintf(newfile, cont);
-            fclose(newfile);
-
-            //dir reset
-            strcpy(dir, realp);
-        }
-        free(realp);
-        free(dir);
-        free(name);
-        free(cont);
-    }
-    else {
+    if(feedback != 0) {
         errno = feedback;
         return -1;
     }
 
-    return 0;
+    reply* rep = (reply*) malloc(sizeof(reply));
+    if(!rep) {
+        //errno = ENOMEM;
+        return -1;
+    }
+    memset(rep, 0, sizeof(reply));
+
+    //creating the realpath, creating directory if it doesn't exist
+    char* realp = realpath(dirname, NULL);
+    if(!realp) {
+        mkdir(dirname, 0777);
+        realp = realpath(dirname, NULL);
+    }
+
+    char* dir = (char*) malloc(sizeof(char)*BUFSIZE);
+    strcpy(dir, realp);
+  
+    int dirsize;
+    char* basenam;
+    int i;
+    for(i=0;i<howmany;i++) {
+        if((err = readn(fdsocket, rep, sizeof(reply)) == -1)) {
+	        return -1;
+        }
+
+        //preparing abspath of newfile
+        basenam = basename(rep->pathname);
+        strcpy(dir, realp);
+        strcat(dir, "/");
+        strcat(dir, basenam);
+
+        FILE* newfile = fopen(dir, "w");
+        fprintf(newfile, "%s", rep->content);
+        fclose(newfile);
+        //dir reset
+        dirsize = strlen(dir);
+        memset(dir, 0, dirsize);
+        memset(rep, 0, sizeof(reply));
+    }
+
+    int filesread;
+    if((err = readn(fdsocket, &filesread, sizeof(int)) == -1)) {
+        //perror("Error in reading how many files have been read");
+	    return -1;
+    }
+
+    free(realp);
+    free(dir);
+    free(rep);
+
+    return filesread;
 }
 
 

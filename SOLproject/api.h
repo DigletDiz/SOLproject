@@ -1,3 +1,7 @@
+#if !defined(_API_H)
+#define _API_H
+
+#define _DEFAULT_SOURCE
 #define _POSIX_C_SOURCE 199309L
 #include <unistd.h>
 #include <assert.h>
@@ -13,15 +17,10 @@
 #include <conn.h>
 #include <errno.h>
 #include <dirent.h>
-#include <limits.h>
+#include <linux/limits.h>
+#include <libgen.h>
+#include <commcs.h>
 #define UNIX_PATH_MAX 108
-
-typedef struct request{
-    int code;
-    char pathname[BUFSIZE];
-    int flags;
-    int nfiles;
-} request;
 
 
 int openConnection(const char* sockname, int msec, const struct timespec abstime);
@@ -78,3 +77,5 @@ Ritorna 0 in caso di successo, -1 in caso di fallimento, errno viene settato opp
 int removeFile(const char* pathname);
 /*Rimuove il file cancellandolo dal file storage server. L’operazione fallisce se il file non è in stato locked, o è in
 stato locked da parte di un processo client diverso da chi effettua la removeFile.*/
+
+#endif
