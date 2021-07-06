@@ -342,7 +342,49 @@ void worker(void *arg) {
 		case WRITEFILE:
 			break;
 		case APPENDTOFILE:
+		{
+			//Does the file exist?
+			char* pathname = req->pathname;
+			char* toapp = req->toappend;
+			char* data = icl_hash_find(fileht, (void*)pathname);
+			if(data == NULL) {
+				printf("File %s doesn't exist\n", pathname);
+				serverfb(connfd, ENOENT);
+				break;
+			}
+
+			int length = snprintf(NULL, 0, "%d", connfd);
+			char* str = malloc(length + 1);
+			if(str == NULL) {
+        		perror("malloc failed\n");
+				serverfb(connfd, ENOMEM);
+        		break;
+    		}
+			snprintf(str, length + 1, "%d", connfd);
+
+			//Did the client open the file?
+			flist* opfilel = icl_hash_find(openht, (void*)str);
+			if(opfilel == NULL) {
+				printf("Read file: Client not found\n");
+				serverfb(connfd, EBADR); //sending error
+				break;
+			}
+			int found = listFind(opfilel->head, pathname);
+			if(found == -1) {
+				printf("Client %d must open file %s before trying to append\n", connfd, pathname);
+				serverfb(connfd, EPERM); //sending error
+				break;
+			}
+
+			free(str);
+
+			strcat(data, toapp);
+
+			//request fullfilled
+			serverfb(connfd, 0);
+			
 			break;
+		}
 		case LOCKFILE:
 			break;
 		case UNLOCKFILE:

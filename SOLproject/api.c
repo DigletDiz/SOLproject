@@ -187,6 +187,7 @@ settato opportunamente.*/
 	        return -1;
         }
 
+        *size = strlen(rep->content); //////////////////////////////////////////////////////////////////////
         strcpy(*buf, rep->content);
     }
     else {
@@ -305,11 +306,56 @@ int writeFile(const char* pathname, const char* dirname);
 terminata con successo, è stata openFile(pathname, O_CREATE| O_LOCK). Se ‘dirname’ è diverso da NULL, il
 file eventualmente spedito dal server perchè espulso dalla cache per far posto al file ‘pathname’ dovrà essere
 scritto in ‘dirname’; Ritorna 0 in caso di successo, -1 in caso di fallimento, errno viene settato opportunamente.*/
-int appendToFile(const char* pathname, void* buf, size_t size, const char* dirname);
+
+
+int appendToFile(const char* pathname, void* buf, size_t size, const char* dirname) {
 /*Richiesta di scrivere in append al file ‘pathname‘ i ‘size‘ bytes contenuti nel buffer ‘buf’. L’operazione di append
 nel file è garantita essere atomica dal file server. Se ‘dirname’ è diverso da NULL, il file eventualmente spedito
 dal server perchè espulso dalla cache per far posto ai nuovi dati di ‘pathname’ dovrà essere scritto in ‘dirname’;
 Ritorna 0 in caso di successo, -1 in caso di fallimento, errno viene settato opportunamente.*/
+    if(pathname == NULL) {
+        errno = EFAULT;
+        return -1;
+    }
+
+    int err = 0;
+
+    request* req = (request*) malloc(sizeof(request));
+    if(req == NULL) {
+        //perror("malloc failed\n");
+        //errno = ENOMEM;
+        return -1;
+    }
+    memset(req, 0, sizeof(request));
+
+    req->code = APPENDTOFILE;
+    strcpy(req->pathname, pathname);
+    strcpy(req->toappend, (char*)buf);
+    //req->pathname = pathname;
+    //printf("Codice: %d\n", req->code);
+    //printf("Path: %s\n", req->pathname);
+    //sending request
+    if((err = writen(fdsocket, req, sizeof(request))) == -1) {
+	    return -1;
+    }
+
+    free(req);
+
+    int feedback;
+
+    //Reading server's feedback
+    if((err = readn(fdsocket, &feedback, sizeof(int))) == -1) {
+	    return -1;
+    }
+    if(feedback != 0) {
+        errno = feedback;
+        return -1;
+    }
+
+    return 0;
+}
+
+
 int lockFile(const char* pathname);
 /*In caso di successo setta il flag O_LOCK al file. Se il file era stato aperto/creato con il flag O_LOCK e la
 richiesta proviene dallo stesso processo, oppure se il file non ha il flag O_LOCK settato, l’operazione termina
