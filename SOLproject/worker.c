@@ -282,6 +282,7 @@ void worker(void *arg) {
 				serverfb(connfd, ENOMEM);
         		break;
     		}
+			memset(rep, 0, sizeof(reply));
 
 			//richiesta accettata
 			serverfb(connfd, 0);
@@ -317,6 +318,7 @@ void worker(void *arg) {
 				serverfb(connfd, errno);
         		break;
     		}
+			memset(rep, 0, sizeof(reply));
 
 			//richiesta accettata
 			serverfb(connfd, 0);
@@ -332,6 +334,8 @@ void worker(void *arg) {
 
 			printf("ReadNFiles: Success\n");
 			serverfb(connfd, filesread);
+
+			free(rep);
 
 			break;
 		}

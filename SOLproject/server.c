@@ -114,8 +114,8 @@ int main(int argc, char *argv[]) {
     sigaddset(&mask, SIGTERM);
     
     if (pthread_sigmask(SIG_BLOCK, &mask,NULL) != 0) {
-		fprintf(stderr, "FATAL ERROR\n");
-		goto _exit;
+		fprintf(stderr, "FATAL ERROR\n");   
+    	return -1;
     }
 
     // ignoro SIGPIPE per evitare di essere terminato da una scrittura su un socket
@@ -123,8 +123,8 @@ int main(int argc, char *argv[]) {
     memset(&s,0,sizeof(s));    
     s.sa_handler=SIG_IGN;
     if ( (sigaction(SIGPIPE,&s,NULL) ) == -1 ) {   
-		perror("sigaction");
-		goto _exit;
+		perror("sigaction");  
+    	return -1;
     } 
 
     /*
@@ -133,8 +133,8 @@ int main(int argc, char *argv[]) {
      */
     int signal_pipe[2];
     if (pipe(signal_pipe)==-1) {
-		perror("pipe");
-		goto _exit;
+		perror("pipe"); 
+    	return -1;
     }
 
 	/*
@@ -144,21 +144,21 @@ int main(int argc, char *argv[]) {
 	int request_pipe[2];
     if (pipe(request_pipe)==-1) {
 		perror("pipe");
-		goto _exit;
+		return -1;
     }
     
     pthread_t sighandler_thread;
     sigHandler_t handlerArgs = { &mask, signal_pipe[1] };
    
     if (pthread_create(&sighandler_thread, NULL, sigHandler, &handlerArgs) != 0) {
-		fprintf(stderr, "errore nella creazione del signal handler thread\n");
-		goto _exit;
+		perror("errore nella creazione del signal handler thread");
+		return -1;
     }
     
     int listenfd;
     if ((listenfd= socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
 		perror("socket");
-		goto _exit;
+		return -1;
     }
 
     struct sockaddr_un serv_addr;
@@ -168,11 +168,13 @@ int main(int argc, char *argv[]) {
 
     if (bind(listenfd, (struct sockaddr*)&serv_addr,sizeof(serv_addr)) == -1) {
 		perror("bind");
-		goto _exit;
+		
+		return -1;
     }
     if (listen(listenfd, MAXBACKLOG) == -1) {
 		perror("listen");
-		goto _exit;
+		unlink(SOCKNAME);
+		return -1;
     }
 
     threadpool_t *pool = NULL;
@@ -180,7 +182,8 @@ int main(int argc, char *argv[]) {
     pool = createThreadPool(threadsInPool, threadsInPool); 
     if (!pool) {
 		fprintf(stderr, "ERRORE FATALE NELLA CREAZIONE DEL THREAD POOL\n");
-		goto _exit;
+		unlink(SOCKNAME);
+		return -1;
     }
     
     fd_set set, tmpset;
@@ -199,20 +202,51 @@ int main(int argc, char *argv[]) {
 	icl_hash_t* fileht = icl_hash_create(file_nbuckets, NULL, NULL);
 	if (!fileht) {
 		fprintf(stderr, "ERRORE FATALE NELLA CREAZIONE DELLA TABELLA HASH\n");
+		destroyThreadPool(pool, 0);
 		unlink(SOCKNAME);
     	return -1;
     }
 
-	icl_hash_dump(stdout, fileht);
+	//icl_hash_dump(stdout, fileht);
 
 	//char* pippo = "pippo";
 	//char* sunus = "Ciao Davide";
 	char* pippo = "pippo";
-	char* sunus = (char*) malloc(sizeof(char)*BUFSIZE);
-	sunus = "Ciao Davide";
-	icl_entry_t* boh = icl_hash_insert(fileht, (void*)pippo, (void*)sunus);
+	char sis[BUFSIZE];
+	/*if(!sis) {
+		perror("malloc");
+		destroyThreadPool(pool, 0);
+		icl_hash_destroy(fileht, NULL, free);
+		unlink(SOCKNAME);
+		return -1;
+    }*/
+	char* sus = "Ciao Davide";
+	strcpy(sis, sus);
+	icl_entry_t* boh = icl_hash_insert(fileht, (void*)pippo, (void*)sis);
 	if(boh == NULL) {
 		fprintf(stderr, "Errore insert\n");
+		destroyThreadPool(pool, 0);
+		icl_hash_destroy(fileht, NULL, free);
+		unlink(SOCKNAME);
+    	return -1;
+	}
+
+	char* sd = "sunus";
+	char shish[BUFSIZE];
+	/*if(!shish) {
+		perror("malloc");
+		destroyThreadPool(pool, 0);
+		icl_hash_destroy(fileht, NULL, free);
+		unlink(SOCKNAME);
+		return -1;
+    }*/
+	char* shi = "Ciau";
+	strcpy(shish, shi);
+	icl_entry_t* asd = icl_hash_insert(fileht, (void*)sd, (void*)shish);
+	if(asd == NULL) {
+		fprintf(stderr, "Errore insert\n");
+		destroyThreadPool(pool, 0);
+		icl_hash_destroy(fileht, NULL, free);
 		unlink(SOCKNAME);
     	return -1;
 	}
@@ -225,6 +259,8 @@ int main(int argc, char *argv[]) {
 	icl_hash_t* openht = icl_hash_create(open_nbuckets, NULL, NULL);
 	if(!openht) {
 		fprintf(stderr, "ERRORE FATALE NELLA CREAZIONE DELLA TABELLA HASH\n");
+		destroyThreadPool(pool, 0);
+		icl_hash_destroy(fileht, NULL, free);
 		unlink(SOCKNAME);
     	return -1;
     }
@@ -235,7 +271,11 @@ int main(int argc, char *argv[]) {
 		tmpset = set;
 		if (select(fdmax+1, &tmpset, NULL, NULL, NULL) == -1) {
 		    perror("select");
-		    goto _exit;
+		    destroyThreadPool(pool, 0);
+			icl_hash_destroy(fileht, NULL, free);
+			icl_hash_destroy(openht, free, listDestroyicl);
+			unlink(SOCKNAME);
+    		return -1;
 		}
 		// cerchiamo di capire da quale fd abbiamo ricevuto una richiesta
 		for(int i=0; i <= fdmax; i++) {
@@ -244,7 +284,7 @@ int main(int argc, char *argv[]) {
 				if(i == listenfd) { // e' una nuova richiesta di connessione 
 				    if((connfd = accept(listenfd, (struct sockaddr*)NULL ,NULL)) == -1) {
 						perror("accept");
-						goto _exit;
+						break;
 				    }
 
 					printf("client %d connesso\n", connfd);
@@ -261,6 +301,7 @@ int main(int argc, char *argv[]) {
 					if(prova == NULL) {
 						//set errno
 						printf("CIAO SUNUS");
+						unlink(SOCKNAME);
 						return -1;
 					}
 					//icl_hash_dump(stdout, openht);
@@ -290,8 +331,12 @@ int main(int argc, char *argv[]) {
 				else { //richiesta di un client, la mando al tp
 					wargs* args = (wargs*) malloc(sizeof(wargs));
 				    if(!args) {
-				      perror("FATAL ERROR 'malloc'");
-				      goto _exit;
+				    	perror("FATAL ERROR 'malloc'");
+				    	destroyThreadPool(pool, 0);
+						icl_hash_destroy(fileht, NULL, free);
+						icl_hash_destroy(openht, free, listDestroyicl);
+						unlink(SOCKNAME);
+    					return -1;
 				    }
 				    args->clsock = i; //client socket
 				    args->shutdown = (long)&termina; //do I need to stop?
@@ -309,6 +354,7 @@ int main(int argc, char *argv[]) {
 				    } 
 					else { // coda dei pendenti piena
 						fprintf(stderr, "SERVER TOO BUSY\n");
+						//maybe spawn a thread worker in detach mode
 				    }
 				    free(args);
 				    close(connfd);
@@ -318,7 +364,7 @@ int main(int argc, char *argv[]) {
     }
 
 
-	icl_hash_destroy(fileht, NULL, free);
+	icl_hash_destroy(fileht, NULL, NULL);
 	icl_hash_destroy(openht, free, listDestroyicl);
     
     destroyThreadPool(pool, 0);  // notifico che i thread dovranno uscire
@@ -328,7 +374,4 @@ int main(int argc, char *argv[]) {
 
     unlink(SOCKNAME);    
     return 0;    
- _exit:
-    unlink(SOCKNAME);
-    return -1;
 }
