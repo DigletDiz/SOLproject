@@ -4,7 +4,7 @@
 #include <assert.h>
 #include <sys/select.h>
 
-#include <api.h>
+#include <commcs.h>
 #include <util.h>
 #include <conn.h>
 #include <list.h>
@@ -33,6 +33,51 @@ void serverfb(int connfd, int fb) {
 	return;
 }
 
+
+//write server feedback
+void serverReply(int connfd, reply* rep, char* pathname, char* content) {
+
+	strcpy(rep->pathname, pathname);
+	strcpy(rep->content, content);
+	int err;
+	//writing reply to the client 
+	err = writen((long)connfd, rep, sizeof(reply));
+    if(err == -1) {
+    	perror("writen");
+    	fprintf(stderr, "Error in sending server's reply....\n");
+		return;
+	}
+
+	printf("File %s read for client %d\n", pathname, connfd);
+
+	return;
+}
+
+
+//used by readNfiles to send N or all files to client 
+int readNfiles(icl_hash_t* ht, int connfd, reply* rep, int N) {
+    icl_entry_t *bucket, *curr;
+    int i;
+    int filesread = 0;
+
+    if(!ht) return -1;
+
+    i = 0;
+    while(i < ht->nbuckets && filesread < N) {
+        bucket = ht->buckets[i];
+        for(curr=bucket; curr!=NULL; ) {
+            if(curr->key) {
+				serverReply(connfd, rep, (char*)curr->key, (char*)curr->data);
+                filesread++;
+            }
+            curr=curr->next;
+        }
+        i++;
+    }
+
+    return filesread;
+}
+
 // funzione eseguita dal Worker thread del pool
 void worker(void *arg) {
     assert(arg);
@@ -50,9 +95,10 @@ void worker(void *arg) {
 	request* req = (request*) malloc(sizeof(request));
     if(req == NULL) {
         perror("malloc failed\n");
+		serverfb(connfd, ENOMEM);
         return;
     }
-	memset(req, 0, sizeof(request));
+	//memset(req, 0, sizeof(request));
 
 	int err = 0;
 
@@ -75,6 +121,10 @@ void worker(void *arg) {
 		//removing client from hashtable
 		int length = snprintf(NULL, 0, "%d", connfd);
 		char* str = malloc(length + 1);
+		if(str == NULL) {
+        	perror("malloc failed\n");
+        	return;
+    	}
 		snprintf(str, length + 1, "%d", connfd);
 
 		//flist* ln = icl_hash_find(openht, (void*)str);
@@ -104,44 +154,42 @@ void worker(void *arg) {
 		case OPENFILE:
 		{
 			int flags = req->flags;
-			char* pathname = (char*) malloc(sizeof(char)*BUFSIZE);
-			strcpy(pathname, req->pathname);
+			char* pathname = req->pathname;
 			
 			if(flags == 0) { //0 = no flags
 				char* data = icl_hash_find(fileht, (void*)pathname);
 				if(data == NULL) {
 					printf("File %s doesn't exist\n", pathname);
-					serverfb(connfd, 1); //sending error
+					serverfb(connfd, ENOENT);
 					break;
 				}
 
 				int length = snprintf(NULL, 0, "%d", connfd);
 				char* str = malloc(length + 1);
+				if(str == NULL) {
+        			perror("malloc failed\n");
+					serverfb(connfd, ENOMEM);
+        			break;
+    			}
 				snprintf(str, length + 1, "%d", connfd);
 
 				//inserting in the openhashtable the opened file for the client
 				flist* dt = icl_hash_find(openht, (void*)str);
 				if(dt == NULL) {
 					printf("Open file: Client not found\n");
-					serverfb(connfd, 1); //sending error
+					serverfb(connfd, EBADR); //sending error
 					break;
 				}
-				listInsertHead(&(dt->head), pathname);
-
-				//printf("Aggiunto %s\n", dt->head->pathname);
-
-				/*//rimanda il descrittore al main thread
-				if((err = writen(wep, (void*)&connfd, sizeof(int))) == -1) {
-	    			perror("pipe write\n");
-	    			return;
-				}*/
-
-				/*icl_entry_t* newo = icl_hash_insert(openht, (void*)connfd, (void*)pathname);
-				if(newo == NULL) {
-					perror("Error: insert in hashtable\n");
-					serverfb(connfd, -1); //sending error
+				int search = listFind(dt->head, pathname);
+				if(search == 0) { //file already opened
+					printf("Open file: file already opened\n");
+					serverfb(connfd, EPERM); //sending error
 					break;
-				}*/
+				}
+				else {
+					listInsertHead(&(dt->head), pathname);
+				}
+
 				free(str);
 
 				printf("File %s opened for client %d\n", pathname, connfd);
@@ -150,20 +198,37 @@ void worker(void *arg) {
 			}
 			else if(flags == 1) { //1 = O_CREATE
 				char* data = (char*) malloc(sizeof(char)*256);
+				if(data == NULL) {
+        			perror("malloc failed\n");
+					serverfb(connfd, ENOMEM);
+        			break;
+    			}
 				icl_entry_t* new = icl_hash_insert(fileht, (void*)pathname, (void*)data);
 				if(new == NULL) {
 					printf("File %s already exists\n", pathname);
-					serverfb(connfd, 1); //sending error
+					serverfb(connfd, EEXIST); //sending error
 					break;
 				}
 				printf("File %s inserted in the storage\n", pathname);
 				//inserting in the openhashtable the opened file for the client
-				icl_entry_t* newt = icl_hash_insert(openht, (void*)&connfd, (void*)pathname);
-				if(newt == NULL) {
-					perror("Error: insert in hashtable\n");
+				int length = snprintf(NULL, 0, "%d", connfd);
+				char* str = malloc(length + 1);
+				if(str == NULL) {
+        			perror("malloc failed\n");
+					serverfb(connfd, ENOMEM);
+        			break;
+    			}	
+				snprintf(str, length + 1, "%d", connfd);
+
+				flist* dt = icl_hash_find(openht, (void*)str);
+				if(dt == NULL) {
+					printf("Open file: Client not found\n");
 					serverfb(connfd, 1); //sending error
 					break;
 				}
+				listInsertHead(&(dt->head), pathname);
+
+				free(str);
 
 				printf("File %s opened for client %d\n", pathname, connfd);
 				serverfb(connfd, 0); //sending success
@@ -182,55 +247,94 @@ void worker(void *arg) {
 			char* data = icl_hash_find(fileht, (void*)pathname);
 			if(data == NULL) {
 				printf("File %s doesn't exist\n", pathname);
-				serverfb(connfd, 1); //sending error
+				serverfb(connfd, ENOENT);
 				break;
 			}
 
 			int length = snprintf(NULL, 0, "%d", connfd);
 			char* str = malloc(length + 1);
+			if(str == NULL) {
+        		perror("malloc failed\n");
+				serverfb(connfd, ENOMEM);
+        		break;
+    		}
 			snprintf(str, length + 1, "%d", connfd);
 
 			//Did the client open the file?
 			flist* opfilel = icl_hash_find(openht, (void*)str);
 			if(opfilel == NULL) {
 				printf("Read file: Client not found\n");
-				serverfb(connfd, 1); //sending error
+				serverfb(connfd, EBADR); //sending error
 				break;
 			}
 			int found = listFind(opfilel->head, pathname);
 			if(found == -1) {
 				printf("Client %d must open file %s before trying to read it\n", connfd, pathname);
-				serverfb(connfd, 1); //sending error
+				serverfb(connfd, EPERM); //sending error
 				break;
 			}
 
 			free(str);
 
-			serverfb(connfd, 0); //sending success
+			reply* rep = (reply*) malloc(sizeof(reply));
+			if(rep == NULL) {
+        		perror("malloc failed\n");
+				serverfb(connfd, ENOMEM);
+        		break;
+    		}
 
-			int datasize = strlen(data);
+			//richiesta accettata
+			serverfb(connfd, 0);
 
-			//writing file's size to the client 
-			err = writen((long)connfd, &datasize, sizeof(int));
-    		if(err == -1) {
-    			perror("writen");
-    			fprintf(stderr, "Error in sending file's size....\n");
-				break;
-			}
-			//writing file to the client 
-			err = writen((long)connfd, data, datasize);
-    		if(err == -1) {
-    			perror("writen");
-    			fprintf(stderr, "Error in sending file's data....\n");
-				break;
-			}
+			serverReply(connfd, rep, pathname, data);
 
-			printf("File %s read for client %d\n", pathname, connfd);
-
+			free(rep);
+			
 			break;
 		}
 		case READNFILES:
+		{
+			int N = req->nfiles;
+			int toread;
+
+			if(N <= 0 || fileht->nentries < N) {
+				toread = fileht->nentries;
+			}
+			else {
+				toread = N;
+			}
+
+			err = writen((long)connfd, &toread, sizeof(int));
+    		if(err == -1) {
+    			perror("writen");
+    			fprintf(stderr, "Error in sending number of files to be read....\n");
+				break;
+			}
+
+			reply* rep = (reply*) malloc(sizeof(reply));
+			if(rep == NULL) {
+        		perror("malloc failed\n");
+				serverfb(connfd, errno);
+        		break;
+    		}
+
+			//richiesta accettata
+			serverfb(connfd, 0);
+
+			//cycles the hashtable and reads "N" files for the client
+			int filesread;
+			filesread = readNfiles(fileht, connfd, rep, toread);
+			if(filesread == -1) {
+				perror("ReadNfiles");
+				serverfb(connfd, -1);
+				break;
+			}
+
+			printf("ReadNFiles: Success\n");
+			serverfb(connfd, filesread);
+
 			break;
+		}
 		case WRITEFILE:
 			break;
 		case APPENDTOFILE:
