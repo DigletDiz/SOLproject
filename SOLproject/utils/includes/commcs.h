@@ -5,6 +5,7 @@ typedef struct request{
     char pathname[BUFSIZE];
     int flags;
     int nfiles;
+    char toappend[BUFSIZE];
 } request;
 
 typedef struct reply{
