@@ -59,3 +59,24 @@ node* pop(queue* q) {
 
     return popped;
 }
+
+
+void qdestroy(queue* q) {
+    if(q == NULL) {
+        perror("error: the list in null");
+        return;
+    }
+
+    node* tmp;
+    node* curr = q->head;
+    
+    while(curr != NULL) {
+        tmp = curr;
+        curr = curr->next;
+        free(tmp);
+    }
+    free(q);
+    q = NULL;
+
+    return;
+}

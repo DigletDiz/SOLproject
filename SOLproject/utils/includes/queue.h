@@ -16,3 +16,4 @@ typedef struct queue {
 queue* qcreate();
 void enqueue(queue* q, const char op, void* dat);
 node* pop(queue* q);
+void qdestroy(queue* q);
