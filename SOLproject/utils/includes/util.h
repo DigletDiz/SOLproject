@@ -30,8 +30,8 @@
 	exit(errno_copy);			\
     }
 
-#define SYSCALL_PRINT(name, r, sc, str, ...)	\
-    if ((r=sc) == -1) {				\
+#define SYSCALL_PRINT(name, r, sc, str, print, ...)	\
+    if ((r=sc) == -1 && print == 1) {				\
 	perror(#name);			\
 	int errno_copy = errno;			\
 	print_error(str, __VA_ARGS__);		\
@@ -91,6 +91,7 @@ static inline void print_error(const char * str, ...) {
   }
   strcpy(p,err);
   strcpy(p+strlen(err), str);
+  strcpy(p+strlen(err)+strlen(str), " \"%s\"\n");
   va_start(argp, str);
   vfprintf(stderr, p, argp);
   va_end(argp);
