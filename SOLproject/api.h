@@ -20,6 +20,7 @@
 #include <linux/limits.h>
 #include <libgen.h>
 #include <commcs.h>
+#include <flags.h>
 #define UNIX_PATH_MAX 108
 
 /*Viene aperta una connessione AF_UNIX al socket file sockname. Se il server non accetta immediatamente la
