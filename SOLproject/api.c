@@ -148,6 +148,7 @@ int readFile(const char* pathname, void** buf, size_t* size) {
     //printf("Path: %s\n", req->pathname);
     //sending request
     if((err = writen(fdsocket, req, sizeof(request))) == -1) {
+        free(req);
 	    return -1;
     }
 
@@ -167,11 +168,14 @@ int readFile(const char* pathname, void** buf, size_t* size) {
         }
 
         if((err = readn(fdsocket, rep, sizeof(reply))) == -1) {
+            free(rep);
 	        return -1;
         }
 
         *size = strlen(rep->content); //////////////////////////////////////////////////////////////////////
         strcpy(*buf, rep->content);
+
+        free(rep);
     }
     else {
         errno = feedback;
