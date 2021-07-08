@@ -9,6 +9,7 @@
 #include <conn.h>
 #include <list.h>
 #include <icl_hash.h>
+#include <flags.h>
 
 typedef struct wargs{
 	long clsock;
@@ -156,7 +157,7 @@ void worker(void *arg) {
 			int flags = req->flags;
 			char* pathname = req->pathname;
 			
-			if(flags == 0) { //0 = no flags
+			if(flags == NOFLAGS) { //NOFLAGS
 				char* data = icl_hash_find(fileht, (void*)pathname);
 				if(data == NULL) {
 					printf("File %s doesn't exist\n", pathname);
@@ -196,7 +197,7 @@ void worker(void *arg) {
 				
 				serverfb(connfd, 0); //sending success
 			}
-			else if(flags == 1) { //1 = O_CREATE
+			else if(flags == O_CREATE) { //O_CREATE
 				char* data = (char*) malloc(sizeof(char)*256);
 				if(data == NULL) {
         			perror("malloc failed\n");
@@ -234,8 +235,8 @@ void worker(void *arg) {
 				serverfb(connfd, 0); //sending success
 				break;
 			}
-			else if(flags == 2) {printf("O_LOCK not supported\n");serverfb(connfd, -1);} //O_LOCK
-			else if(flags == 3) {printf("O_LOCK not supported\n");serverfb(connfd, -1);} //O_CREATE && O_LOCK
+			else if(flags == O_LOCK) {printf("O_LOCK not supported\n");serverfb(connfd, -1);} //O_LOCK
+			else if(flags == O_CL) {printf("O_LOCK not supported\n");serverfb(connfd, -1);} //O_CREATE && O_LOCK
 			else {printf("flags not recognized");serverfb(connfd, -1);}
 
 			break;
@@ -421,8 +422,6 @@ void worker(void *arg) {
 			break;
 		}
 		case REMOVEFILE:
-			break;
-		case CLOSECONNECTION:
 			break;
 		default:
 			break;
