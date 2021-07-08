@@ -29,14 +29,14 @@ typedef struct wargs{
 
 void worker(void *arg);
 
-int int_compare(void* a, void* b) {
+/*int int_compare(void* a, void* b) {
 	if((int*)a == (int*)b) {
 		return 1;
 	}
 	else {
 		return 0;
 	}
-}
+}*/
 
 //nbuckets = max file number on config
 int file_nbuckets = 1000;
@@ -154,6 +154,10 @@ int main(int argc, char *argv[]) {
 		perror("errore nella creazione del signal handler thread");
 		return -1;
     }
+
+
+	//configParse();	
+
     
     int listenfd;
     if ((listenfd= socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
@@ -209,19 +213,24 @@ int main(int argc, char *argv[]) {
 
 	//icl_hash_dump(stdout, fileht);
 
-	//char* pippo = "pippo";
-	//char* sunus = "Ciao Davide";
-	char* pippo = "pippo";
+	/*char* pippo = "pippo";
 	char sis[BUFSIZE];
-	/*if(!sis) {
+	strcpy(sis, "Ciao Davide");*/
+	/*char* sis = (char*) malloc(sizeof(char)*BUFSIZE);
+	if(!sis) {
 		perror("malloc");
 		destroyThreadPool(pool, 0);
 		icl_hash_destroy(fileht, NULL, free);
 		unlink(SOCKNAME);
 		return -1;
-    }*/
-	char* sus = "Ciao Davide";
-	strcpy(sis, sus);
+    }
+	memset(sis, 0, sizeof(char)*BUFSIZE);
+	char* pippo = "pippo";
+	sis = "Ciao Davide";*/
+
+	char* pippo = "pippo";
+	char* sis = strdup("Ciao Davide");
+
 	icl_entry_t* boh = icl_hash_insert(fileht, (void*)pippo, (void*)sis);
 	if(boh == NULL) {
 		fprintf(stderr, "Errore insert\n");
@@ -231,17 +240,24 @@ int main(int argc, char *argv[]) {
     	return -1;
 	}
 
-	char* sd = "sunus";
+	/*char* sd = "sunus";
 	char shish[BUFSIZE];
-	/*if(!shish) {
+	strcpy(shish, "Ciau");*/
+	/*char* shish = (char*) malloc(sizeof(char)*BUFSIZE);
+	if(!shish) {
 		perror("malloc");
 		destroyThreadPool(pool, 0);
 		icl_hash_destroy(fileht, NULL, free);
 		unlink(SOCKNAME);
 		return -1;
-    }*/
-	char* shi = "Ciau";
-	strcpy(shish, shi);
+    }
+	memset(shish, 0, sizeof(char)*BUFSIZE);
+	char* sd = "sunus";
+	shish = "Ciau";*/
+
+	char* sd = "sunus";
+	char* shish = strdup("Ciau");
+
 	icl_entry_t* asd = icl_hash_insert(fileht, (void*)sd, (void*)shish);
 	if(asd == NULL) {
 		fprintf(stderr, "Errore insert\n");
@@ -364,7 +380,7 @@ int main(int argc, char *argv[]) {
     }
 
 
-	icl_hash_destroy(fileht, NULL, NULL);
+	icl_hash_destroy(fileht, NULL, free);
 	icl_hash_destroy(openht, free, listDestroyicl);
     
     destroyThreadPool(pool, 0);  // notifico che i thread dovranno uscire
