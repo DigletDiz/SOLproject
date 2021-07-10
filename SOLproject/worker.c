@@ -1,8 +1,11 @@
+#define _POSIX_C_SOURCE 2001112L
 #include <stdlib.h>
 #include <errno.h>
 #include <ctype.h>
 #include <assert.h>
 #include <sys/select.h>
+#include <string.h>
+
 
 #include <commcs.h>
 #include <util.h>
@@ -10,6 +13,7 @@
 #include <list.h>
 #include <icl_hash.h>
 #include <flags.h>
+#include <rwmutex.h>
 
 typedef struct wargs{
 	long clsock;
@@ -18,6 +22,83 @@ typedef struct wargs{
 	icl_hash_t* fileht;
 	icl_hash_t* openht;
 } wargs;
+
+
+extern int num_bucket_per_mutex;
+extern int file_nbuckets;
+extern rwmutex* mutexes;
+
+//calculates the right mutex for the given bucket
+//returns the index of mutex array
+int find_right_mutex(int bucketindex) {
+
+	if(bucketindex >= file_nbuckets) {
+		errno = ERANGE;
+		return -1;
+	}
+
+	int base = num_bucket_per_mutex;
+	int ceiling = base;
+	int mutex_index = 0;
+	while(bucketindex > ceiling-1) {
+		mutex_index++;
+		ceiling += base;
+	}
+
+	return mutex_index;
+}
+
+
+void read_begin(rwmutex* mut) {
+
+	LOCK(&(mut->mutex));
+	while(mut->waiting_writers > 0 || mut->writing == 1) {
+		WAIT(&(mut->cond), &(mut->mutex));
+	}
+	(mut->nreaders)++;
+	UNLOCK(&(mut->mutex));
+
+	return;
+}
+
+
+void read_end(rwmutex* mut) {
+
+	LOCK(&(mut->mutex));
+	(mut->nreaders)--;
+	if(mut->nreaders == 0) {
+		BCAST(&(mut->cond));
+	}
+	UNLOCK(&(mut->mutex));
+
+	return;
+}
+
+
+void write_begin(rwmutex* mut) {
+
+	LOCK(&(mut->mutex));
+	(mut->waiting_writers)++;
+	while(mut->nreaders > 0 || mut->writing == 1) {
+		WAIT(&(mut->cond), &(mut->mutex));
+	}
+	(mut->waiting_writers)--;
+	mut->writing = 1;
+	UNLOCK(&(mut->mutex));
+
+	return;
+}
+
+
+void write_end(rwmutex* mut) {
+
+	LOCK(&(mut->mutex));
+	mut->writing = 0;
+	BCAST(&(mut->cond));
+	UNLOCK(&(mut->mutex));
+
+	return;
+}
 
 
 //write server feedback
@@ -60,24 +141,29 @@ int readNfiles(icl_hash_t* ht, int connfd, reply* rep, int N) {
     icl_entry_t *bucket, *curr;
     int i;
     int filesread = 0;
+	int mutex_index;
 
     if(!ht) return -1;
 
     i = 0;
     while(i < ht->nbuckets && filesread < N) {
         bucket = ht->buckets[i];
+		mutex_index = find_right_mutex(i);
         for(curr=bucket; curr!=NULL; ) {
+			read_begin(&mutexes[mutex_index]);
             if(curr->key) {
 				serverReply(connfd, rep, (char*)curr->key, (char*)curr->data);
                 filesread++;
             }
             curr=curr->next;
+			read_end(&mutexes[mutex_index]);
         }
         i++;
     }
 
     return filesread;
 }
+
 
 // funzione eseguita dal Worker thread del pool
 void worker(void *arg) {
@@ -243,11 +329,18 @@ void worker(void *arg) {
 		}
 		case READFILE:
 		{
+			//read begin setup
+			int bucket_index = hash_pjw((void*) req->pathname) % file_nbuckets;
+			int mutex_index = find_right_mutex(bucket_index);
+			//read begin
+			read_begin(&mutexes[mutex_index]);
+
 			//Does the file exist?
 			char* pathname = req->pathname;
 			char* data = icl_hash_find(fileht, (void*)pathname);
 			if(data == NULL) {
 				printf("File %s doesn't exist\n", pathname);
+				read_end(&mutexes[mutex_index]);
 				serverfb(connfd, ENOENT);
 				break;
 			}
@@ -256,6 +349,7 @@ void worker(void *arg) {
 			char* str = malloc(length + 1);
 			if(str == NULL) {
         		perror("malloc failed\n");
+				read_end(&mutexes[mutex_index]);
 				serverfb(connfd, ENOMEM);
         		break;
     		}
@@ -265,12 +359,14 @@ void worker(void *arg) {
 			flist* opfilel = icl_hash_find(openht, (void*)str);
 			if(opfilel == NULL) {
 				printf("Read file: Client not found\n");
+				read_end(&mutexes[mutex_index]);
 				serverfb(connfd, EBADR); //sending error
 				break;
 			}
 			int found = listFind(opfilel->head, pathname);
 			if(found == -1) {
 				printf("Client %d must open file %s before trying to read it\n", connfd, pathname);
+				read_end(&mutexes[mutex_index]);
 				serverfb(connfd, EPERM); //sending error
 				break;
 			}
@@ -280,6 +376,7 @@ void worker(void *arg) {
 			reply* rep = (reply*) malloc(sizeof(reply));
 			if(rep == NULL) {
         		perror("malloc failed\n");
+				read_end(&mutexes[mutex_index]);
 				serverfb(connfd, ENOMEM);
         		break;
     		}
@@ -289,6 +386,8 @@ void worker(void *arg) {
 			serverfb(connfd, 0);
 
 			serverReply(connfd, rep, pathname, data);
+
+			read_end(&mutexes[mutex_index]);
 
 			free(rep);
 			
@@ -344,12 +443,19 @@ void worker(void *arg) {
 			break;
 		case APPENDTOFILE:
 		{
+			//write begin setup
+			int bucket_index = hash_pjw((void*) req->pathname) % file_nbuckets;
+			int mutex_index = find_right_mutex(bucket_index);
+			//write begin
+			write_begin(&mutexes[mutex_index]);
+
 			//Does the file exist?
 			char* pathname = req->pathname;
 			char* toapp = req->toappend;
 			char* data = icl_hash_find(fileht, (void*)pathname);
 			if(data == NULL) {
 				printf("File %s doesn't exist\n", pathname);
+				write_end(&mutexes[mutex_index]);
 				serverfb(connfd, ENOENT);
 				break;
 			}
@@ -358,6 +464,7 @@ void worker(void *arg) {
 			char* str = malloc(length + 1);
 			if(str == NULL) {
         		perror("malloc failed\n");
+				write_end(&mutexes[mutex_index]);
 				serverfb(connfd, ENOMEM);
         		break;
     		}
@@ -367,19 +474,51 @@ void worker(void *arg) {
 			flist* opfilel = icl_hash_find(openht, (void*)str);
 			if(opfilel == NULL) {
 				printf("Read file: Client not found\n");
+				write_end(&mutexes[mutex_index]);
 				serverfb(connfd, EBADR); //sending error
 				break;
 			}
 			int found = listFind(opfilel->head, pathname);
 			if(found == -1) {
 				printf("Client %d must open file %s before trying to append\n", connfd, pathname);
+				write_end(&mutexes[mutex_index]);
 				serverfb(connfd, EPERM); //sending error
 				break;
 			}
 
 			free(str);
 
-			strcat(data, toapp);
+			//change data
+			//preparing newsize
+			int oldsize = strlen(data);
+			int toappsize = strlen(toapp);
+			int newsize = oldsize+toappsize+1;
+
+			char* newdata = (char*) malloc(sizeof(char)*newsize);
+			if(newdata == NULL) {
+        		perror("malloc failed\n");
+				write_end(&mutexes[mutex_index]);
+				serverfb(connfd, ENOMEM);
+        		break;
+    		}
+
+			memcpy(newdata, data, oldsize);
+			memcpy(newdata+oldsize, toapp, toappsize+1);
+
+			icl_entry_t* curr;
+    		unsigned int hash_val;
+
+    		hash_val = (* fileht->hash_function)(pathname) % fileht->nbuckets;
+
+    		for(curr=fileht->buckets[hash_val]; curr != NULL; curr=curr->next) {
+        		if(fileht->hash_key_compare(curr->key, pathname)) {
+            		free(curr->data);
+					curr->data = newdata;
+				}
+			}
+			//change data end
+
+			write_end(&mutexes[mutex_index]);
 
 			//request fullfilled
 			serverfb(connfd, 0);
