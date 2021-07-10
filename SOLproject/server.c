@@ -10,6 +10,7 @@
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <math.h>
 
 #include <threadpool.h>
 #include <conn.h>
@@ -17,6 +18,8 @@
 #include <worker.h>
 #include <icl_hash.h>
 #include <list.h>
+#include <queue.h>
+#include <rwmutex.h>
 
 
 typedef struct wargs{
@@ -26,6 +29,16 @@ typedef struct wargs{
 	icl_hash_t* fileht;
 	icl_hash_t* openht;
 } wargs;
+
+//nbuckets = max file number on config
+int file_nbuckets;
+int open_nbuckets;
+int core;
+int num_bucket_per_mutex;
+int mutexnum;
+
+//read-write mutex array
+rwmutex* mutexes;
 
 void worker(void *arg);
 
@@ -38,9 +51,32 @@ void worker(void *arg);
 	}
 }*/
 
-//nbuckets = max file number on config
-int file_nbuckets = 1000;
-int open_nbuckets = 20;
+
+void mutexdestroy(rwmutex* mut, int size) {
+	
+	free(mut);
+	/*int i;
+	for(i=0;i<size;i++) {
+		free(&mut[i]);
+	}*/
+
+	return;
+}
+
+
+void exit_clean(icl_hash_t* fileht, icl_hash_t* openht, rwmutex* mut, threadpool_t* pool, char* sockname, int force) {
+	
+	if(mut) mutexdestroy(mut, mutexnum);
+
+	if(fileht) icl_hash_destroy(fileht, NULL, free);
+	if(openht) icl_hash_destroy(openht, free, listDestroyicl);
+    
+    if(pool) destroyThreadPool(pool, force);
+
+    if(sockname) unlink(SOCKNAME);   
+
+	return;
+}
 
 
 /**
@@ -156,11 +192,20 @@ int main(int argc, char *argv[]) {
     }
 
 
-	//configParse();	
+	//configParse();
 
-    
+	file_nbuckets = 100;
+	open_nbuckets = 20;
+	core = 4;
+	num_bucket_per_mutex = ceil(file_nbuckets/core);
+	mutexnum = (file_nbuckets > core) ? core : file_nbuckets;
+
+	//printf("%d\n", core);
+	//printf("%d\n", num_bucket_per_mutex);
+
+
     int listenfd;
-    if ((listenfd= socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
+    if((listenfd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
 		perror("socket");
 		return -1;
     }
@@ -171,8 +216,7 @@ int main(int argc, char *argv[]) {
     strncpy(serv_addr.sun_path, SOCKNAME, strlen(SOCKNAME)+1);
 
     if (bind(listenfd, (struct sockaddr*)&serv_addr,sizeof(serv_addr)) == -1) {
-		perror("bind");
-		
+		perror("bind");	
 		return -1;
     }
     if (listen(listenfd, MAXBACKLOG) == -1) {
@@ -206,8 +250,7 @@ int main(int argc, char *argv[]) {
 	icl_hash_t* fileht = icl_hash_create(file_nbuckets, NULL, NULL);
 	if (!fileht) {
 		fprintf(stderr, "ERRORE FATALE NELLA CREAZIONE DELLA TABELLA HASH\n");
-		destroyThreadPool(pool, 0);
-		unlink(SOCKNAME);
+		exit_clean(NULL, NULL, NULL, pool, SOCKNAME, 1);
     	return -1;
     }
 
@@ -228,15 +271,15 @@ int main(int argc, char *argv[]) {
 	char* pippo = "pippo";
 	sis = "Ciao Davide";*/
 
+	//queue* filequeue = qcreate();
+
 	char* pippo = "pippo";
 	char* sis = strdup("Ciao Davide");
 
 	icl_entry_t* boh = icl_hash_insert(fileht, (void*)pippo, (void*)sis);
 	if(boh == NULL) {
 		fprintf(stderr, "Errore insert\n");
-		destroyThreadPool(pool, 0);
-		icl_hash_destroy(fileht, NULL, free);
-		unlink(SOCKNAME);
+		exit_clean(fileht, NULL, NULL, pool, SOCKNAME, 1);
     	return -1;
 	}
 
@@ -261,9 +304,7 @@ int main(int argc, char *argv[]) {
 	icl_entry_t* asd = icl_hash_insert(fileht, (void*)sd, (void*)shish);
 	if(asd == NULL) {
 		fprintf(stderr, "Errore insert\n");
-		destroyThreadPool(pool, 0);
-		icl_hash_destroy(fileht, NULL, free);
-		unlink(SOCKNAME);
+		exit_clean(fileht, NULL, NULL, pool, SOCKNAME, 1);
     	return -1;
 	}
 
@@ -275,22 +316,35 @@ int main(int argc, char *argv[]) {
 	icl_hash_t* openht = icl_hash_create(open_nbuckets, NULL, NULL);
 	if(!openht) {
 		fprintf(stderr, "ERRORE FATALE NELLA CREAZIONE DELLA TABELLA HASH\n");
-		destroyThreadPool(pool, 0);
-		icl_hash_destroy(fileht, NULL, free);
-		unlink(SOCKNAME);
+		exit_clean(fileht, NULL, NULL, pool, SOCKNAME, 1);
     	return -1;
     }
+
+	mutexes = (rwmutex*) malloc(sizeof(rwmutex) * mutexnum);
+	if(mutexes == NULL) {
+		perror("mutexes");
+		exit_clean(fileht, openht, NULL, pool, SOCKNAME, 1);
+    	return -1;
+	}
+
+	//inizializing mutexes
+	for(int i = 0; i < mutexnum; i++) {
+		rwmutex* copy = &mutexes[i];
+    	pthread_mutex_init(&(copy->mutex), NULL);
+		pthread_cond_init(&(copy->cond), NULL);
+		copy->nreaders = 0;
+		copy->waiting_writers = 0;
+		copy->writing = 0;
+	}
+
 
     volatile long termina=0;
     while(!termina) {
 		// copio il set nella variabile temporanea per la select
 		tmpset = set;
-		if (select(fdmax+1, &tmpset, NULL, NULL, NULL) == -1) {
+		if(select(fdmax+1, &tmpset, NULL, NULL, NULL) == -1) {
 		    perror("select");
-		    destroyThreadPool(pool, 0);
-			icl_hash_destroy(fileht, NULL, free);
-			icl_hash_destroy(openht, free, listDestroyicl);
-			unlink(SOCKNAME);
+			exit_clean(fileht, openht, mutexes, pool, SOCKNAME, 1);
     		return -1;
 		}
 		// cerchiamo di capire da quale fd abbiamo ricevuto una richiesta
@@ -348,10 +402,7 @@ int main(int argc, char *argv[]) {
 					wargs* args = (wargs*) malloc(sizeof(wargs));
 				    if(!args) {
 				    	perror("FATAL ERROR 'malloc'");
-				    	destroyThreadPool(pool, 0);
-						icl_hash_destroy(fileht, NULL, free);
-						icl_hash_destroy(openht, free, listDestroyicl);
-						unlink(SOCKNAME);
+						exit_clean(fileht, openht, mutexes, pool, SOCKNAME, 1);
     					return -1;
 				    }
 				    args->clsock = i; //client socket
@@ -379,15 +430,10 @@ int main(int argc, char *argv[]) {
 		}
     }
 
-
-	icl_hash_destroy(fileht, NULL, free);
-	icl_hash_destroy(openht, free, listDestroyicl);
-    
-    destroyThreadPool(pool, 0);  // notifico che i thread dovranno uscire
+	exit_clean(fileht, openht, mutexes, pool, SOCKNAME, 1); //l'ultimo parametro da settare a seconda del segnale
 
     // aspetto la terminazione del signal handler thread
     pthread_join(sighandler_thread, NULL);
-
-    unlink(SOCKNAME);    
+ 
     return 0;    
 }
