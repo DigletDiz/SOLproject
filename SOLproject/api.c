@@ -88,7 +88,7 @@ int openFile(const char* pathname, int flags) {
     request* req = (request*) malloc(sizeof(request));
     if (req == NULL) {
         //perror("malloc failed\n");
-        errno = ENOMEM;
+        //errno = ENOMEM;
         return -1;
     }
     memset(req, 0, sizeof(request));
@@ -291,7 +291,7 @@ int writeFile(const char* pathname, const char* dirname);
 int appendToFile(const char* pathname, void* buf, size_t size, const char* dirname) {
 
     if(pathname == NULL) {
-        errno = EFAULT;
+        errno = EINVAL;
         return -1;
     }
 
@@ -342,7 +342,7 @@ int unlockFile(const char* pathname);
 int closeFile(const char* pathname) {
 
     if(pathname == NULL) {
-        errno = ENOENT;
+        errno = EINVAL;
         return -1;
     }
     request* req = (request*) malloc(sizeof(request));
