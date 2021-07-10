@@ -68,8 +68,8 @@ void listRemove(lnode** l, char* pathname) {
         if(strcmp((*l)->pathname, pathname) == 0) {
             //file found
             if(prec == NULL) {
+                *l = (*l)->next;
                 free(curr);
-                *l = NULL;
                 return;
             }
             else {
