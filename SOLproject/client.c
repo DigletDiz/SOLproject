@@ -23,7 +23,7 @@
 void optParse(int argc, char* argv[]);
 void optExe();
 void tokenenqueue(char* totokenize, char opt);
-int tokenappend(char* totokenize, char** pathname, char** toappend);
+int tokenappend(char* totokenize);
 
 void print_usage(const char *programname) {
     printf("usage: %s -f filename -w dirname[,n=0] -W file1[,file2] -D dirname -r file1[,file2] -R [n=0] -d dirname  -t time -l file1[,file2] -u file1[,file2] -c file1[,file2] -p -h\n", programname);
@@ -93,11 +93,11 @@ void optParse(int argc, char* argv[]) {
                 break;
             case 'R':
                 if(optarg != NULL) {
-                    err = isNumber(optarg, (long*)&R_nfiles);
+                    err = isNumber(optarg, &R_nfiles);
                     if(err == 1) {printf("Not a number: will be treated as 0");}
                     if(err == 2) {printf("Overflow/underflow: will be treated as 0");}
                 }
-                enqueue(q, 'R', (void*)&R_nfiles);
+                enqueue(q, 'R', (void*)&R_nfiles, NULL);
                 read_flag = 1;
                 break;
             case 'd':
@@ -105,7 +105,7 @@ void optParse(int argc, char* argv[]) {
                 break;
             case 't':
                 if(optarg != NULL) {
-                    err = isNumber(optarg, (long*)&t_time);
+                    err = isNumber(optarg, &t_time);
                     if(err == 1) {printf("Not a number: will be treated as 0");}
                     if(err == 2) {printf("Overflow/underflow: will be treated as 0");}
                 }
@@ -132,8 +132,13 @@ void optParse(int argc, char* argv[]) {
                 print_usage(argv[0]);
                 _exit(EXIT_SUCCESS);
             case 'a':
-                enqueue(q, 'a', (void*)optarg);            
+            {
+                int checka = tokenappend(optarg);  
+                if(checka == -1) {
+                    fprintf(stderr, "error append: invalid format (filename@\"stringtoappend\")\n");
+                }  
                 break;
+            }
             default: /* '?' */
                 if (optopt == 'd' || optopt == 'r')
                     fprintf(stderr, "Option -%c requires an argument.\n", optopt);
@@ -160,11 +165,10 @@ void optExe() {
     int err = 0;
     char* buf;
     char* currdata;
-    //char* append = " sono Daniele";
+    char* toapnd;
     size_t sis = 0;
     node* curr;
-    char* pathname;
-    char* toappend;
+    struct timespec sleepTime; 
 
     while(q->head != NULL) {
         curr = pop(q);
@@ -198,17 +202,14 @@ void optExe() {
             }
             case 'a':
             {
-                err = tokenappend(currdata, &pathname, &toappend);
-                if(err == -1) {fprintf(stderr, "error append: invalid format (filename@\"stringtoappend\")\n");break;}
-
-                SYSCALL_PRINT("openFile", err, openFile(pathname, NOFLAGS), "cannot open", p_print, pathname);
-                if(err == 0 && p_print == 1) {printf("openFile %s: success\n", pathname);}
-                //char* b = " SEEEEEEEEEEEEEEEEEES";
-                int s = strlen(toappend);
-                SYSCALL_PRINT("appendToFile", err, appendToFile(pathname, toappend, s, NULL), "cannot append", p_print, pathname);
-                if(err == 0 && p_print == 1) {printf("appendToFile %s: success\n", pathname);}
-                SYSCALL_PRINT("closeFile", err, closeFile(pathname), "cannot close", p_print, pathname);
-                if(err == 0 && p_print == 1) {printf("closeFile %s: success\n", pathname);}
+                toapnd = curr->toapp;
+                SYSCALL_PRINT("openFile", err, openFile(currdata, NOFLAGS), "cannot open", p_print, currdata);
+                if(err == 0 && p_print == 1) {printf("openFile %s: success\n", currdata);}
+                sis = strlen(toapnd);
+                SYSCALL_PRINT("appendToFile", err, appendToFile(currdata, toapnd, sis, NULL), "cannot append", p_print, currdata);
+                if(err == 0 && p_print == 1) {printf("appendToFile %s: success\n", currdata);}
+                SYSCALL_PRINT("closeFile", err, closeFile(currdata), "cannot close", p_print, currdata);
+                if(err == 0 && p_print == 1) {printf("closeFile %s: success\n", currdata);}
                 break;
             }
             default: /* '?' */
@@ -237,6 +238,12 @@ void optExe() {
         //err = readNFiles(3, "ciccio");
        
         free(curr);
+
+        sleepTime.tv_nsec = t_time * 1000000;
+
+        if((err = nanosleep(&sleepTime, NULL)) == -1) {
+            fprintf(stderr, "Error: nanosleep\n");
+        }
     }
 
     return;
@@ -249,22 +256,24 @@ void tokenenqueue(char* totokenize, char opt) {
     char* rest = totokenize;
   
     while((token = strtok_r(rest, ",", &rest))) {
-        enqueue(q, opt, (void*)token);
+        enqueue(q, opt, (void*)token, NULL);
     }
   
     return;
 }
 
 
-int tokenappend(char* totokenize, char** pathname, char** toappend) {
+int tokenappend(char* totokenize) {
     char* rest = totokenize;
   
-    *pathname = strtok_r(rest, "@", &rest);
-    *toappend = strtok_r(rest, "\0", &rest);
+    char* pathname = strtok_r(rest, "@", &rest);
+    char* toappend = strtok_r(rest, "\0", &rest);
   
-    if(!(*pathname) || !(*toappend)) { 
+    if(!(pathname) || !(toappend)) { 
         return -1;
     }
+
+    enqueue(q, 'a', (void*)pathname, toappend);
 
     return 0;
 }
