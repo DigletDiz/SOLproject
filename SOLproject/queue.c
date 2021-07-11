@@ -13,7 +13,7 @@ queue* qcreate() {
     return new;
 }
 
-void enqueue(queue* q, const char op, void* dat) {
+void enqueue(queue* q, const char op, void* dat, char* toappend) {
     if(q == NULL) {
         perror("enqueue failed: q is NULL\n");
         return;
@@ -26,6 +26,7 @@ void enqueue(queue* q, const char op, void* dat) {
 
     new->opt = op;
     new->data = dat;
+    new->toapp = toappend;
     new->next = NULL;
 
     if(q->head == NULL) {
