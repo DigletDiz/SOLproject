@@ -308,6 +308,7 @@ int appendToFile(const char* pathname, void* buf, size_t size, const char* dirna
     req->code = APPENDTOFILE;
     strcpy(req->pathname, pathname);
     strcpy(req->toappend, (char*)buf);
+    req->sizeappend = size;
     //req->pathname = pathname;
     //printf("Codice: %d\n", req->code);
     //printf("Path: %s\n", req->pathname);
