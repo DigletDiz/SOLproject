@@ -6,27 +6,28 @@
 #include <sys/select.h>
 #include <string.h>
 
-
 #include <commcs.h>
 #include <util.h>
 #include <conn.h>
 #include <list.h>
+#include <queue.h>
 #include <icl_hash.h>
 #include <flags.h>
 #include <rwmutex.h>
 
 typedef struct wargs{
 	long clsock;
-	long shutdown;
 	long wpipe;
-	icl_hash_t* fileht;
-	icl_hash_t* openht;
 } wargs;
 
-
+extern int storage_capacity;
+extern int memory_occupied;
 extern int num_bucket_per_mutex;
 extern int file_nbuckets;
 extern rwmutex* mutexes;
+extern icl_hash_t* fileht;
+extern icl_hash_t* clientht;
+extern queue* filequeue;
 
 //calculates the right mutex for the given bucket
 //returns the index of mutex array
@@ -101,6 +102,42 @@ void write_end(rwmutex* mut) {
 }
 
 
+void eject_alg() {
+	
+	node* head;
+	char* path;
+	char* data;
+	int err;
+	int size;
+	printf("Memory occupied %d\n", memory_occupied);
+	printf("Storage capacity %d\n", storage_capacity);
+	while(memory_occupied > storage_capacity) {		
+		head = pop(filequeue);
+		path = head->data;
+		data = icl_hash_find(fileht, (void*)path);
+		if(data == NULL) {
+			fprintf(stderr, "ERROR: IT IS IMPOSSIBLE TO REMOVE FILE FROM HASHTABLE, ABORT\n");
+			//pthread_kill;
+			return;
+		}
+		size = strlen(data);
+		err = icl_hash_delete(fileht, (void*)path, NULL, free);
+		if(err == -1) {
+			fprintf(stderr, "ERROR: IT IS IMPOSSIBLE TO REMOVE FILE FROM HASHTABLE, ABORT\n");
+			//pthread_kill;
+			return;
+		}
+
+		memory_occupied -= size;
+		free(head);
+		printf("File %s eliminated\n", path);
+		printf("Memory occupied %d\n", memory_occupied);
+	}
+
+	return;
+}
+
+
 //write server feedback
 void serverfb(int connfd, int fb) {
 
@@ -170,11 +207,8 @@ void worker(void *arg) {
     assert(arg);
     wargs* args = (wargs*)arg;
     int connfd = (int)args->clsock;
-    //long* termina = (long*)(args->shutdown);
 	int wep = (int)args->wpipe;
-	icl_hash_t* fileht = args->fileht;
-	icl_hash_t* openht = args->openht;
-    free(arg);
+    free(args);
 
 	//icl_hash_dump(stdout, fileht);
 
@@ -214,10 +248,10 @@ void worker(void *arg) {
     	}
 		snprintf(str, length + 1, "%d", connfd);
 
-		//flist* ln = icl_hash_find(openht, (void*)str);
+		//flist* ln = icl_hash_find(clientht, (void*)str);
 		//printf("%s\n", ln->head->pathname);
 		//listDelete(&(ln->head));
-		int check = icl_hash_delete(openht, (void*)str, free, listDestroyicl);
+		int check = icl_hash_delete(clientht, (void*)str, free, listDestroyicl);
 		if(!check) {
 			printf("Rimosso client dall'hashtable con successo\n");
 		}
@@ -260,8 +294,8 @@ void worker(void *arg) {
     			}
 				snprintf(str, length + 1, "%d", connfd);
 
-				//inserting in the openhashtable the opened file for the client
-				flist* dt = icl_hash_find(openht, (void*)str);
+				//inserting in the clienthashtable the opened file for the client
+				flist* dt = icl_hash_find(clientht, (void*)str);
 				if(dt == NULL) {
 					printf("Open file: Client not found\n");
 					serverfb(connfd, EBADR); //sending error
@@ -307,7 +341,7 @@ void worker(void *arg) {
     			}	
 				snprintf(str, length + 1, "%d", connfd);
 
-				flist* dt = icl_hash_find(openht, (void*)str);
+				flist* dt = icl_hash_find(clientht, (void*)str);
 				if(dt == NULL) {
 					printf("Open file: Client not found\n");
 					serverfb(connfd, 1); //sending error
@@ -356,7 +390,7 @@ void worker(void *arg) {
 			snprintf(str, length + 1, "%d", connfd);
 
 			//Did the client open the file?
-			flist* opfilel = icl_hash_find(openht, (void*)str);
+			flist* opfilel = icl_hash_find(clientht, (void*)str);
 			if(opfilel == NULL) {
 				printf("Read file: Client not found\n");
 				read_end(&mutexes[mutex_index]);
@@ -452,6 +486,7 @@ void worker(void *arg) {
 			//Does the file exist?
 			char* pathname = req->pathname;
 			char* toapp = req->toappend;
+			int sizeapp = req->sizeappend;
 			char* data = icl_hash_find(fileht, (void*)pathname);
 			if(data == NULL) {
 				printf("File %s doesn't exist\n", pathname);
@@ -471,7 +506,7 @@ void worker(void *arg) {
 			snprintf(str, length + 1, "%d", connfd);
 
 			//Did the client open the file?
-			flist* opfilel = icl_hash_find(openht, (void*)str);
+			flist* opfilel = icl_hash_find(clientht, (void*)str);
 			if(opfilel == NULL) {
 				printf("Read file: Client not found\n");
 				write_end(&mutexes[mutex_index]);
@@ -518,6 +553,13 @@ void worker(void *arg) {
 			}
 			//change data end
 
+			//updating memory occupation
+			memory_occupied += sizeapp;
+
+			if(memory_occupied > storage_capacity) {
+				eject_alg();
+			}
+
 			write_end(&mutexes[mutex_index]);
 
 			//request fullfilled
@@ -546,7 +588,7 @@ void worker(void *arg) {
 			snprintf(str, length + 1, "%d", connfd);
 
 			//closing the file for the client
-			flist* dt = icl_hash_find(openht, (void*)str);
+			flist* dt = icl_hash_find(clientht, (void*)str);
 			if(dt == NULL) {
 				printf("Close file: Client not found\n");
 				serverfb(connfd, 1); //sending error
