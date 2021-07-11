@@ -103,7 +103,7 @@ static inline void print_error(const char * str, ...) {
  * \brief Controlla se la stringa passata come primo argomento e' un numero.
  * \return  0 ok  1 non e' un numbero   2 overflow/underflow
  */
-static inline int isNumber(const char* s, long* n) {
+static inline int isNumber(const char* s, int* n) {
   if (s==NULL) return 1;
   if (strlen(s)==0) return 1;
   char* e = NULL;
@@ -111,7 +111,7 @@ static inline int isNumber(const char* s, long* n) {
   long val = strtol(s, &e, 10);
   if (errno == ERANGE) return 2;    // overflow/underflow
   if (e != NULL && *e == (char)0) {
-    *n = val;
+    *n = (int)val;
     return 0;   // successo 
   }
   return 1;   // non e' un numero

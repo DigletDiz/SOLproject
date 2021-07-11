@@ -4,6 +4,7 @@
 typedef struct node {
     char opt;
     void* data;
+    char* toapp;
     struct node* next;
 } node;
 
@@ -14,6 +15,6 @@ typedef struct queue {
 
 
 queue* qcreate();
-void enqueue(queue* q, const char op, void* dat);
+void enqueue(queue* q, const char op, void* dat, char* toapp);
 node* pop(queue* q);
 void qdestroy(queue* q);

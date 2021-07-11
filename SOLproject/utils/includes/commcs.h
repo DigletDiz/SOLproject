@@ -6,6 +6,7 @@ typedef struct request{
     int flags;
     int nfiles;
     char toappend[BUFSIZE];
+    int sizeappend;
 } request;
 
 typedef struct reply{
