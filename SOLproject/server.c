@@ -21,24 +21,30 @@
 #include <queue.h>
 #include <rwmutex.h>
 
+#define CONFIG "server_config.txt"
+
 
 typedef struct wargs{
 	long clsock;
-	long shutdown;
 	long wpipe;
-	icl_hash_t* fileht;
-	icl_hash_t* openht;
 } wargs;
 
 //nbuckets = max file number on config
+char sockname[256];
+int workers;
 int file_nbuckets;
-int open_nbuckets;
-int core;
+int client_nbuckets;
+int storage_capacity;
+int memory_occupied;
+int cores;
 int num_bucket_per_mutex;
 int mutexnum;
 
 //read-write mutex array
 rwmutex* mutexes;
+queue* filequeue;
+icl_hash_t* fileht;
+icl_hash_t* clientht;
 
 void worker(void *arg);
 
@@ -50,6 +56,145 @@ void worker(void *arg);
 		return 0;
 	}
 }*/
+
+
+int readConfig() {
+    char *filename = CONFIG;
+    FILE *fp = fopen(filename, "r");
+
+    if(fp == NULL) {
+        printf("Error: could not open file %s", filename);
+        return -1;
+    }
+
+    char buffer[256];
+	memset(buffer, 0, 256);
+	char* token;
+    char* rest;
+	int err;
+
+	int i = 0;
+    while(fgets(buffer, 256, fp)) {
+		printf("RIGA %d\n", i);
+		/*rest = buffer;
+		while(*rest != '=') {
+			rest++;
+		}
+		rest++;*/
+
+		//printf("sdaadsasd %s\n", rest);
+
+		rest = buffer;
+   		token = strtok(rest, "=");
+		token = strtok(NULL, "\r\n");
+		
+		//printf("%s\n", token);
+		
+		switch(i) {
+			case 0:
+			{
+				//printf("REST %s\n", token);
+				if(token != NULL) {
+					strcpy(sockname, token);
+				}
+				else {
+					fprintf(stderr, "CONFIG PARSE ERROR: SOCKNAME WILL BE SET WITH A DEFAULT VALUE %s\n", "./cs_sock");
+				}
+				break;
+			}
+			case 1:
+			{
+				//printf("MAX_FILE %s\n", token);
+
+				int maxfile;
+				err = isNumber(token, &maxfile);
+                if(err != 0 || maxfile <= 0) {
+					fprintf(stderr, "CONFIG PARSE ERROR: MAX_FILE WILL BE SET WITH A DEFAULT VALUE %d\n", 100);
+				}
+				else {
+					file_nbuckets = maxfile;
+				}
+				/*if(token != NULL) {
+					file_nbuckets = atoi(token);
+				}*/
+				//printf("ASDASDASDSADAADSADADSADADSADADSDSD %d\n", file_nbuckets);
+				break;
+			}
+			case 2:
+			{
+				int megabytes;
+				err = isNumber(token, &megabytes);
+                if(err != 0 || megabytes <= 0) {
+					fprintf(stderr, "CONFIG PARSE ERROR: STORAGE_CAPACITY WILL BE SET WITH A DEFAULT VALUE %d\n", 1000000);
+				}
+				else {
+					storage_capacity = megabytes;
+				}
+				/*if(token != NULL) {
+					storage_capacity = atoi(token);
+				}*/
+				break;
+			}
+			case 3:
+			{
+				int clients;
+				err = isNumber(token, &clients);
+                if(err != 0 || clients <= 0) {
+					fprintf(stderr, "CONFIG PARSE ERROR: CLIENTS_EXPECTED WILL BE SET WITH A DEFAULT VALUE %d\n", 20);
+				}
+				else {
+					client_nbuckets = clients;
+				}
+				/*if(token != NULL) {
+					client_nbuckets = atoi(token);
+				}*/
+				break;
+			}
+			case 4:
+			{
+				int cor;
+				err = isNumber(token, &cor);
+                if(err != 0 || cor <= 0) {
+					fprintf(stderr, "CONFIG PARSE ERROR: CORES WILL BE SET WITH A DEFAULT VALUE %d\n", 4);
+				}
+				else {
+					cores = cor;
+				}
+				/*if(token != NULL) {
+					cores = atoi(token);
+				}*/
+				break;
+			}
+			case 5:
+			{
+				int threadw;
+				err = isNumber(token, &threadw);
+                if(err != 0 || threadw <= 0) {
+					fprintf(stderr, "CONFIG PARSE ERROR: THREAD_WORKERS WILL BE SET WITH A DEFAULT VALUE %d\n", 5);
+				}
+				else {
+					workers = threadw;
+				}
+				/*if(token != NULL) {
+					workers = atoi(token);
+				}*/
+				break;
+			}
+			default:
+			{
+				fprintf(stderr, "AH NON LO SO IO\n");
+				break;
+			}
+		}
+		memset(buffer, 0, 256);
+		i++;
+	}
+
+    // close the file
+    fclose(fp);
+
+    return 0;
+}
 
 
 void mutexdestroy(rwmutex* mut, int size) {
@@ -64,16 +209,18 @@ void mutexdestroy(rwmutex* mut, int size) {
 }
 
 
-void exit_clean(icl_hash_t* fileht, icl_hash_t* openht, rwmutex* mut, threadpool_t* pool, char* sockname, int force) {
+void exit_clean(icl_hash_t* fileht, icl_hash_t* clientht, rwmutex* mut, threadpool_t* pool, char* sockname, queue* filequeue, int force) {
 	
+	if(pool) destroyThreadPool(pool, force);
+
 	if(mut) mutexdestroy(mut, mutexnum);
 
-	if(fileht) icl_hash_destroy(fileht, NULL, free);
-	if(openht) icl_hash_destroy(openht, free, listDestroyicl);
-    
-    if(pool) destroyThreadPool(pool, force);
+	if(filequeue) qdestroy(filequeue);
 
-    if(sockname) unlink(SOCKNAME);   
+	if(fileht) icl_hash_destroy(fileht, NULL, free);
+	if(clientht) icl_hash_destroy(clientht, free, listDestroyicl);
+    
+    if(sockname) unlink(sockname);   
 
 	return;
 }
@@ -125,10 +272,10 @@ int updatemax(fd_set set, int fdmax) {
     return -1;
 }
 
-static void usage(const char*argv0) {
+/*static void usage(const char*argv0) {
     fprintf(stderr, "use: %s threads-in-the-pool\n", argv0);
-}
-static void checkargs(int argc, char* argv[]) {
+}*/
+/*static void checkargs(int argc, char* argv[]) {
     if (argc != 2) {
 	usage(argv[0]);
 	_exit(EXIT_FAILURE);
@@ -138,10 +285,10 @@ static void checkargs(int argc, char* argv[]) {
 	usage(argv[0]);
 	_exit(EXIT_FAILURE);
     }
-}
+}*/
 int main(int argc, char *argv[]) {
-    checkargs(argc, argv);	    
-    int threadsInPool = (int)strtol(argv[1], NULL, 10);
+    //checkargs(argc, argv);	    
+    //int threadsInPool = (int)strtol(argv[1], NULL, 10);
 
     sigset_t mask;
     sigemptyset(&mask);
@@ -191,14 +338,33 @@ int main(int argc, char *argv[]) {
 		return -1;
     }
 
-
-	//configParse();
-
+	//sockname = "./cs_sock";
 	file_nbuckets = 100;
-	open_nbuckets = 20;
-	core = 4;
-	num_bucket_per_mutex = ceil(file_nbuckets/core);
-	mutexnum = (file_nbuckets > core) ? core : file_nbuckets;
+	storage_capacity = 1000000;
+	client_nbuckets = 20;
+	cores = 4;
+	workers = 5;
+	memory_occupied = 0;
+
+	memset(sockname, 0, 256);
+
+	readConfig();
+
+	printf("%d\n", file_nbuckets);
+	printf("%d\n", storage_capacity);
+
+	/*int prova = strlen(sockname);
+	printf("PROVA 1: lunghezza sockname %d\n", prova);
+	printf("%s\n", sockname);*/
+
+	if(!strlen(sockname)) {
+		strcpy(sockname, SOCKNAME);
+	}
+
+	printf("%s\n", sockname);
+
+	num_bucket_per_mutex = ceil(file_nbuckets/cores);
+	mutexnum = (file_nbuckets > cores) ? cores : file_nbuckets;
 
 	//printf("%d\n", core);
 	//printf("%d\n", num_bucket_per_mutex);
@@ -213,24 +379,24 @@ int main(int argc, char *argv[]) {
     struct sockaddr_un serv_addr;
     memset(&serv_addr, '0', sizeof(serv_addr));
     serv_addr.sun_family = AF_UNIX;    
-    strncpy(serv_addr.sun_path, SOCKNAME, strlen(SOCKNAME)+1);
+    strncpy(serv_addr.sun_path, sockname, strlen(sockname)+1);
 
-    if (bind(listenfd, (struct sockaddr*)&serv_addr,sizeof(serv_addr)) == -1) {
+    if(bind(listenfd, (struct sockaddr*)&serv_addr,sizeof(serv_addr)) == -1) {
 		perror("bind");	
 		return -1;
     }
-    if (listen(listenfd, MAXBACKLOG) == -1) {
+    if(listen(listenfd, MAXBACKLOG) == -1) {
 		perror("listen");
-		unlink(SOCKNAME);
+		unlink(sockname);
 		return -1;
     }
 
     threadpool_t *pool = NULL;
 
-    pool = createThreadPool(threadsInPool, threadsInPool); 
-    if (!pool) {
+    pool = createThreadPool(workers, workers); 
+    if(!pool) {
 		fprintf(stderr, "ERRORE FATALE NELLA CREAZIONE DEL THREAD POOL\n");
-		unlink(SOCKNAME);
+		unlink(sockname);
 		return -1;
     }
     
@@ -247,12 +413,14 @@ int main(int argc, char *argv[]) {
 	int fdre;
 	int n;
 
-	icl_hash_t* fileht = icl_hash_create(file_nbuckets, NULL, NULL);
-	if (!fileht) {
+	fileht = icl_hash_create(file_nbuckets, NULL, NULL);
+	if(!fileht) {
 		fprintf(stderr, "ERRORE FATALE NELLA CREAZIONE DELLA TABELLA HASH\n");
-		exit_clean(NULL, NULL, NULL, pool, SOCKNAME, 1);
+		exit_clean(NULL, NULL, NULL, pool, sockname, NULL, 1);
     	return -1;
     }
+
+	filequeue = qcreate();
 
 	//icl_hash_dump(stdout, fileht);
 
@@ -264,7 +432,7 @@ int main(int argc, char *argv[]) {
 		perror("malloc");
 		destroyThreadPool(pool, 0);
 		icl_hash_destroy(fileht, NULL, free);
-		unlink(SOCKNAME);
+		unlink(sockname);
 		return -1;
     }
 	memset(sis, 0, sizeof(char)*BUFSIZE);
@@ -279,9 +447,11 @@ int main(int argc, char *argv[]) {
 	icl_entry_t* boh = icl_hash_insert(fileht, (void*)pippo, (void*)sis);
 	if(boh == NULL) {
 		fprintf(stderr, "Errore insert\n");
-		exit_clean(fileht, NULL, NULL, pool, SOCKNAME, 1);
+		exit_clean(fileht, NULL, NULL, pool, sockname, filequeue, 1);
     	return -1;
 	}
+	memory_occupied += strlen(sis);
+	enqueue(filequeue, 'w', (void*)pippo, NULL);
 
 	/*char* sd = "sunus";
 	char shish[BUFSIZE];
@@ -291,7 +461,7 @@ int main(int argc, char *argv[]) {
 		perror("malloc");
 		destroyThreadPool(pool, 0);
 		icl_hash_destroy(fileht, NULL, free);
-		unlink(SOCKNAME);
+		unlink(sockname);
 		return -1;
     }
 	memset(shish, 0, sizeof(char)*BUFSIZE);
@@ -299,31 +469,33 @@ int main(int argc, char *argv[]) {
 	shish = "Ciau";*/
 
 	char* sd = "sunus";
-	char* shish = strdup("Ciau");
+	char* shish = strdup("SeS");
 
 	icl_entry_t* asd = icl_hash_insert(fileht, (void*)sd, (void*)shish);
 	if(asd == NULL) {
 		fprintf(stderr, "Errore insert\n");
-		exit_clean(fileht, NULL, NULL, pool, SOCKNAME, 1);
+		exit_clean(fileht, NULL, NULL, pool, sockname, filequeue, 1);
     	return -1;
 	}
+	memory_occupied += strlen(shish);
+	enqueue(filequeue, 'w', (void*)sd, NULL);
 
 	//int check = icl_hash_delete(fileht, pippo, free, free);
 
 	//printf("%d", check);
 	//icl_hash_dump(stdout, fileht);
 
-	icl_hash_t* openht = icl_hash_create(open_nbuckets, NULL, NULL);
-	if(!openht) {
+	clientht = icl_hash_create(client_nbuckets, NULL, NULL);
+	if(!clientht) {
 		fprintf(stderr, "ERRORE FATALE NELLA CREAZIONE DELLA TABELLA HASH\n");
-		exit_clean(fileht, NULL, NULL, pool, SOCKNAME, 1);
+		exit_clean(fileht, NULL, NULL, pool, sockname, filequeue, 1);
     	return -1;
     }
 
 	mutexes = (rwmutex*) malloc(sizeof(rwmutex) * mutexnum);
 	if(mutexes == NULL) {
 		perror("mutexes");
-		exit_clean(fileht, openht, NULL, pool, SOCKNAME, 1);
+		exit_clean(fileht, clientht, NULL, pool, sockname, filequeue, 1);
     	return -1;
 	}
 
@@ -344,7 +516,7 @@ int main(int argc, char *argv[]) {
 		tmpset = set;
 		if(select(fdmax+1, &tmpset, NULL, NULL, NULL) == -1) {
 		    perror("select");
-			exit_clean(fileht, openht, mutexes, pool, SOCKNAME, 1);
+			exit_clean(fileht, clientht, mutexes, pool, sockname, filequeue, 1);
     		return -1;
 		}
 		// cerchiamo di capire da quale fd abbiamo ricevuto una richiesta
@@ -367,14 +539,14 @@ int main(int argc, char *argv[]) {
 					//adding client in hashtable
 					flist* hlist = (flist*) malloc(sizeof(flist));
 					hlist->head = NULL;
-					icl_entry_t* prova = icl_hash_insert(openht, (void*)str, (void*)hlist);  
+					icl_entry_t* prova = icl_hash_insert(clientht, (void*)str, (void*)hlist);  
 					if(prova == NULL) {
 						//set errno
-						printf("CIAO SUNUS");
-						unlink(SOCKNAME);
+						fprintf(stderr, "IT IS IMPOSSIBLE TO INSERT CLIENT IN HASHTABLE\n");
+						exit_clean(fileht, clientht, mutexes, pool, sockname, filequeue, 1);
 						return -1;
 					}
-					//icl_hash_dump(stdout, openht);
+					//icl_hash_dump(stdout, clientht);
 					else {
 						FD_SET(connfd, &set);
 						if(connfd > fdmax) {
@@ -402,14 +574,11 @@ int main(int argc, char *argv[]) {
 					wargs* args = (wargs*) malloc(sizeof(wargs));
 				    if(!args) {
 				    	perror("FATAL ERROR 'malloc'");
-						exit_clean(fileht, openht, mutexes, pool, SOCKNAME, 1);
+						exit_clean(fileht, clientht, mutexes, pool, sockname, filequeue, 1);
     					return -1;
 				    }
 				    args->clsock = i; //client socket
-				    args->shutdown = (long)&termina; //do I need to stop?
 					args->wpipe = (long)request_pipe[1]; //pipe write descriptor
-					args->fileht = fileht;
-					args->openht = openht;
 
 					FD_CLR(i, &set);
 					updatemax(set, fdmax);
@@ -430,7 +599,7 @@ int main(int argc, char *argv[]) {
 		}
     }
 
-	exit_clean(fileht, openht, mutexes, pool, SOCKNAME, 1); //l'ultimo parametro da settare a seconda del segnale
+	exit_clean(fileht, clientht, mutexes, pool, sockname, filequeue, 1); //l'ultimo parametro da settare a seconda del segnale
 
     // aspetto la terminazione del signal handler thread
     pthread_join(sighandler_thread, NULL);
