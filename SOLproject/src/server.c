@@ -503,6 +503,7 @@ int main(int argc, char *argv[]) {
 					else { // coda dei pendenti piena
 						fprintf(stderr, "SERVER TOO BUSY\n");
 						spawnThread(worker, args);
+						continue;
 				    }
 				    free(args);
 				    close(connfd);
