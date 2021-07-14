@@ -13,7 +13,7 @@ sleep 1s
 valgrind --track-origins=yes --leak-check=full ./server & # avvio il server in background
 pid=$!
 
-sleep 3s
+sleep 5s
 
 ./client -h 
 ./client -f cs_sock -v ./fileTest1/ade.txt -p -t200 -r ./fileTest1/ade.txt -d fileSavedCLIENT1 -v ./fileTest1/jinglebells.txt,./fileTest1/dai.txt

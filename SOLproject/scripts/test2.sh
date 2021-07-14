@@ -12,7 +12,7 @@ sleep 1s
 
 valgrind --leak-check=full $SERVER_CMD & #Avvia il server in background con valgrind e i flag settati
 pid=$!
-sleep 2s
+sleep 5s
 
 #Scrivo 11 file che superano il limite MAXSIZE
 for i in {1..11}; do
