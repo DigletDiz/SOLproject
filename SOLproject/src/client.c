@@ -27,7 +27,7 @@ void tokenenqueue(char* totokenize, char opt);
 int tokenappend(char* totokenize);
 
 void print_usage(const char *programname) {
-    printf("usage: %s -f filename -w dirname[,n=0] -W file1[,file2] -D dirname -r file1[,file2] -R [n=0] -d dirname  -t time -l file1[,file2] -u file1[,file2] -c file1[,file2] -p -h\n", programname);
+    printf("usage: %s -f filename -w dirname[,n=0] -W file1[,file2] -D dirname -r file1[,file2] -R [n=0] -d dirname  -t time -l file1[,file2] -u file1[,file2] -c file1[,file2] -p -h -a file1@\"toappend\" -v file1[,file2]\n", programname);
 }
 
 static queue* q;
